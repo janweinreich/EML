@@ -6,3 +6,9 @@ Unfortunately, these models do not protect the privacy necessary within commerci
 Unfortunately, contemporary ML models based on fully homomorphic encryption or federated learning are either too expensive for practical use or have to trade higher speed for weaker security. 
 
 We have implemented secure and efficient encrypted machine learning (EML) models using oblivious transfer enabling efficient and secure predictions of molecular quantum properties across chemical compound space. The performance of our encrypted kernel-ridge regression models indicates a dire need for a compact ML model architecture, including molecular representation and kernel matrix size, that minimizes model evaluation costs.
+
+
+# Setup
+
+1) Download the OT software package MP-SPDZ (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ
+

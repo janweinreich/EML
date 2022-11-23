@@ -1,0 +1,47 @@
+from Compiler import ml
+sfix.set_precision(42, 63)
+print_float_precision(15)
+#KERNEL WIDTH
+sigma = sfix(10952.0)  # = 2.0*sigma*sigma
+ntrain =
+ntest = 1
+testid = 
+REPDIM = 351
+#MERCK DATA (Training)
+GERIT = sfix.Matrix(ntrain, REPDIM+1)
+GERIT.input_from(0)
+#NOVARTIS DATA (Query)
+JIMMY = sfix.Matrix(ntest, REPDIM)
+JIMMY.input_from(1)
+XTRAIN = sfix.Matrix(ntrain, REPDIM)
+XTEST = sfix.Matrix(ntest, REPDIM)
+ALPHAS_MAT = sfix.Matrix(1, ntrain)
+KERNEL = sfix.Matrix(ntrain, ntest)
+
+
+@for_range(ntrain)
+def _(i):
+    for j in range(REPDIM):
+        XTRAIN[i][j] = GERIT[i][j]
+    ALPHAS_MAT[0][i] = GERIT[i][REPDIM]
+
+
+@for_range(ntest)
+def _(i):
+    for j in range(REPDIM):
+        XTEST[i][j] = JIMMY[i][j]
+
+#Use first entry of XTEST since only a single prediction at a time
+j = 0
+@for_range_opt(ntrain)
+def _(i):
+    NEG_XTEST = XTEST[j].__rmul__(-1)
+    DIJ = XTRAIN[i].__radd__(NEG_XTEST)
+    DIJ = sfix.dot_product(DIJ, DIJ)
+    print_ln('DISTANCE %s', DIJ.reveal())
+    KERNEL[i][j] = ml.exp(-DIJ/sigma)
+
+
+#MAKE PREDICTION
+PREDICTED = ALPHAS_MAT.direct_mul(KERNEL)
+print_ln('CRYPTO_PRED %s %s %s', ntrain, testid, PREDICTED[0].reveal())

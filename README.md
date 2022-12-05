@@ -54,5 +54,9 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 2) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
 
-3) 
+3) Generate input files for the oblivios transfer protocol
+
+4) Copy input files to /mp-spdz-0.2.5/Player-Data /Input-P0-0 and /Input-P0-1 respectively
+
+5) 
 

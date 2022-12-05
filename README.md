@@ -21,17 +21,6 @@ the `sub.sh` script:
 
 The first loop iterates over the values 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, and 16384, assigning each value in turn to the variable ntrain. The second loop iterates over the values 0 to 19, incrementing by 1 each time, and assigns each value to the variable ntest.
 
-For each combination of ntrain and ntest, the script performs the following operations:
-
-Copies the file main_sub.sh to a new file main_sub_{ntrain}_{ntest}.sh, where ${ntrain} and ${ntest} are the values of the ntrain and ntest variables, respectively.
-Replaces the string reptype= with the value of the reptype variable in the newly-created file main_sub_{ntrain}_{ntest}.sh.
-Replaces the string #SBATCH --job-name= with the string #SBATCH --job-name={reptype}_${ntrain}_${ntest} in the newly-created file main_sub_${ntrain}_${ntest}.sh, where {reptype}, {ntrain}, and ${ntest} are the values of the reptype, ntrain, and ntest variables, respectively.
-Replaces the string ntrain= with the value of the ntrain variable in the newly-created file main_sub_{ntrain}_{ntest}.sh.
-Replaces the string ntest= with the value of the ntest variable in the newly-created file main_sub_{ntrain}_{ntest}.sh.
-Submits the newly-created file main_sub_${ntrain}_${ntest}.sh for execution on a computer cluster using the sbatch command.
-Moves the newly-created file main_sub_{ntrain}_{ntest}.sh to the directory ./jobscripts/{reptype}, where {reptype} is the value of the reptype variable.
-
-
 
 # Encrypted Neural Network Predictions:
 

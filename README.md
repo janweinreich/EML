@@ -50,5 +50,9 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 # Setup
 
-1) Download the OT software package MP-SPDZ (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ
+1) Download the software package MP-SPDZ needed to perform oblivious transfer calculations (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ
+
+2) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
+
+3) 
 

@@ -9,6 +9,12 @@ We have implemented secure and efficient encrypted machine learning (EML) models
 
 # Encypted Kernel-Ridge Regression Predictions
 
+The script first sets the numerical precision of its calculations to 42 bits and sets the precision of the output to the terminal. It then defines a few variables, including sigma, which is the width of the kernel used in the regression.
+
+Next, the script reads in training data and test data from two input files, and computes the kernel matrix overlap between the test data and the training data. This is done using a gaussian kernel function, which is applied to the dot product of the test data and the training data.
+
+Finally, the script makes a prediction based on the computed kernel matrix and the training data, and outputs the result to the terminal. 
+
 
 # Encrypted Neural Network Predictions:
 

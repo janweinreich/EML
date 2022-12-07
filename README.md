@@ -50,13 +50,14 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 # Setup
 
-1) Download the software package MP-SPDZ needed to perform oblivious transfer calculations (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ
+1) Install the python dependencies `pip install -r requirements.txt`
 
-2) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
+2) Download the software package MP-SPDZ needed to perform oblivious transfer calculations (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ into the main folder
 
-3) Generate input files for the oblivios transfer protocol
+3) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
 
-4) Copy input files to /mp-spdz-0.2.5/Player-Data /Input-P0-0 and /Input-P0-1 respectively
+4) Generate input files for the oblivious transfer protocol using the `learn.py` script
 
-5) 
+5) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to Alice and Bob
 
+6) 

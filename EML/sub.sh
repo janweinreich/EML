@@ -14,4 +14,3 @@ do
                 mv main_sub_${ntrain}_${ntest}.sh ./jobscripts/${reptype}
         done
 done
-

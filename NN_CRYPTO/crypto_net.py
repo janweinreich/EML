@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
         if new:
             import get_qm9 
-            #load the QM9 dataset in BoB representation and atomization energies
+            #load the complete QM9 dataset in BoB representation and atomization energies
             X, y = get_qm9.get_qm9(140000)
 
             np.savez_compressed("data",X=X, y=y)
@@ -206,6 +206,9 @@ if __name__ == "__main__":
 
         y_train, y_test     = y_train.reshape(-1,1), y_test.reshape(-1,1)
 
+
+
+        #scale the data to the range [0,1] for better training performance of the neural network
         sc          = MinMaxScaler()
         sct         = MinMaxScaler()
         X_train     = sc.fit_transform(X_train)
@@ -216,6 +219,8 @@ if __name__ == "__main__":
         print(len(y_train))
         print(len(y_test))
 
+
+        #convert the data to torch tensors
         X_train     = torch.from_numpy(X_train.astype(np.float32))
         X_test      = torch.from_numpy(X_test.astype(np.float32))
         y_train     = torch.from_numpy(y_train.astype(np.float32))
@@ -236,6 +241,10 @@ if __name__ == "__main__":
             crypto_predictions    = []
             plaintext_predictions = []
             
+            #predict using the encrypted model and without encryption
+            #need to rescacle the data to the original range after prediction
+
+
             for i in tqdm(range(len(X_test))       ) :
                 X_curr = X_test[i].reshape((1, X_test.shape[1]))
                 qml_crypto = Crypto("ALICE_NET",X_curr)

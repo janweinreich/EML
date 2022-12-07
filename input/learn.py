@@ -18,16 +18,15 @@ if __name__ == "__main__":
     path_to_file = "/store/jan/datasets/qm9_data.npz"
     qm9 = np.load(path_to_file, allow_pickle=True)
     data = qm9
-    Nmax = 30000  # len(data['coordinates'])
+    Nmax = 30000
     coords = data['coordinates'][:Nmax]
     nuclear_charges = data['charges'][:Nmax]
     elements = data['elements'][:Nmax]
     energies = np.array(data['H_atomization'])[:Nmax]
     Cvs = np.array(data['Cv'])[:Nmax]
 
-    #{'kernel_lambda': 1e-08, 'kernel_sigma': 73.86199822079365}
-    #16384 0.01753798614051945 {'kernel_lambda': 1e-08, 'kernel_sigma': 73.86199822079365}
-    sigma = 74 #73.86199822079365
+
+    sigma = 74
 
     new_rep     = True
     new_hyper   = False
@@ -51,17 +50,13 @@ if __name__ == "__main__":
         X, X_train, y_train, X_test, y_test = data["X"], data["X_train"], data["y_train"], data["X_test"], data["y_test"]
 
     if new_hyper:
-        #[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
-        # [2**i for i in range(5, 15)]
+
 
         param_grid = {'kernel_sigma': np.logspace(1, 2.1, 20),
                       'kernel_lambda': [1e-8]}
 
-        # np.logspace(1.6, 2.5, num=2)
         lrn_crvs = []
 
-        #train, test = indexes[:Nmax], indexes[Nmax:]
-        #X_train, Q_train, X_test, Q_test, y_train, y_test = X[train], Q[train], X[test], Q[test], y[train], y[test]
 
         lrn_crv = []
         for n in [16384]:  
@@ -90,7 +85,6 @@ if __name__ == "__main__":
     
     lrncrv = []
     ntp =[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]  
-    #np.array([2**i for i in range(0, 10, 1)])
     alphas =[]
     predictions = []
 

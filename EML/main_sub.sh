@@ -19,14 +19,13 @@ DATE=`date +%d-%m-%y`                               #name the folder in the scra
 random=`date +%s | sha256sum | base64 | head -c30` 
  
 work="/scratch/${USER}/${DATE}/${reptype}/${random}/${ntrain}/${ntest}" 
-#work="${here}/calc/${USER}/${DATE}/${reptype}/${random}/${ntrain}/${ntest}" 
 mkdir -p $work 
 
 cp -r mp-spdz-0.2.5 $work
 
 data_dir=${work}/mp-spdz-0.2.5/Player-Data
 source_dir=${work}/mp-spdz-0.2.5/Programs/Source/
-model_dir=${here}/qm9/data_${reptype}
+model_dir=${here}/input/data_${reptype}
 
 
 

@@ -152,7 +152,7 @@ def read_xyz(path):
 
 def get_qm9(N):
 
-    directory = '/store/jan/datasets/qm9/'
+    directory = '.'
     len(os.listdir(directory))
 
     file = os.listdir(directory)[0]

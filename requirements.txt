@@ -1,0 +1,11 @@
+numpy
+qml
+scikit-learn
+matplotlib
+tqdm
+torch
+crypten
+qml
+torch
+torchvision
+torchaudio

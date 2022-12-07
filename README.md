@@ -58,13 +58,39 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 4) Download prepared QM9 data `wget https://ndownloader.figshare.com/files/28893843 -O "input/data/qm9_data.npz"`
 
-5) Generate input files for the oblivious transfer protocol using the `learn.py` script
+5) Generate input files for the oblivious transfer protocol using the `learn.py` script.
 
-6) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to Alice and Bob
+
+6) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to ALICE (dataholder) and BOB (query)
+
+# Format of input
+
+The input has the following format:
+
+For ALICE:
+
+MODEL_32 : 32 Trainingmolecules in Coulombmatrix (CM), 32 weights
+
+CM1
+
+weight1
+CM2
+
+.
+.
+.
+
+CM32
+weight32
+
+For BOB:
+
+Single line with CM of query molecule
 
 # Run 
 
-- If you want to compute a learning curve using the CM use the SLURM submission script `sub.sh`.
+- If you want to compute a learning curve using the CM use the SLURM submission script `sub.sh`. 
+- To reproduce the timinig benchmarks from the paper, make sure to lauch only one process at a time.
 - For a simple example and a single prediction follow these steps:
 
 

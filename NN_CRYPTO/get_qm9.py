@@ -13,20 +13,6 @@ from qml.utils import NUCLEAR_CHARGE
 random.seed(1337)
 np.random.seed(1337)
 
-"""
-=========================================================================================================
-  Ele-    ZPVE         U (0 K)      U (298.15 K)    H (298.15 K)    G (298.15 K)     CV
-  ment   Hartree       Hartree        Hartree         Hartree         Hartree        Cal/(Mol Kelvin)
-=========================================================================================================
-   H     0.000000     -0.500273      -0.498857       -0.497912       -0.510927       2.981
-   C     0.000000    -37.846772     -37.845355      -37.844411      -37.861317       2.981
-   N     0.000000    -54.583861     -54.582445      -54.581501      -54.598897       2.981
-   O     0.000000    -75.064579     -75.063163      -75.062219      -75.079532       2.981
-   F     0.000000    -99.718730     -99.717314      -99.716370      -99.733544       2.981
-=========================================================================================================
-"""
-
-
 def get_atomsizes(compounds):
     charge_to_element = {
         1: 'H',
@@ -48,10 +34,6 @@ def get_atomsizes(compounds):
     return asize_dict
 
 
-
-
-    return replist
-
 def atomization_en(EN, ATOMS):
   import collections, numpy
   en_H = -0.500273 
@@ -63,7 +45,7 @@ def atomization_en(EN, ATOMS):
   
   ATOMIZATION = (EN - (COMP['H']*en_H + COMP['C']*en_C + COMP['N']*en_N +  COMP['O']*en_O +  COMP['F']*en_F))
 
-  return ATOMIZATION #/Ntot
+  return ATOMIZATION
   
 def get_atomsizes(compounds):
     charge_to_element = {

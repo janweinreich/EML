@@ -1,15 +1,19 @@
 from sklearn.model_selection import ParameterGrid, KFold
 import numpy as np
 from tqdm import tqdm
-import constants
-from scipy.spatial.distance import pdist, squareform
 import numpy as np
+import math
+import gzip
 from qml.kernels import gaussian_kernel_symmetric, gaussian_kernel
 from qml.representations import generate_coulomb_matrix
 
-#BOTLZMANN CONSTANT IN KCAL/MOL
-k_B = 0.001985875
 
+element2charge    = {'H':1.0, 'C': 6.0, 'N':7.0, 'O':8.0, 'F':9.0,'Si':14.0,'P':15.0,'Pb':82.0,'S':16.0, 'Cl':17.0,'I':53.0,'B':35, 'Br':35.0,'Cs':55.0 } #!!!!! B not Br
+element2effective = {'H': 1, 'C': 3.136, 'N': 3.834, 'O': 4.453 , 'Pb': 12.393, 'I': 11.612, 'Li':1.279}
+charge2element    = {1: 'H', 6: 'C', 7: 'N', 8: 'O', 9:'F',11:'Na', 14: 'Si', 15:'P', 16: 'S',17: 'Cl',53:'I',35:'Br'}
+bohr2angstrom = 0.52917720859
+angstrom2bohr = 1.88972613386246
+hartree2kcal = 627.5094706
 
 
 
@@ -30,7 +34,7 @@ def convert_charges(c):
     converted = []
     for curr in c:
         converted.append(np.asarray(
-            [constants.element2charge[v] for v in curr]))
+            [element2charge[v] for v in curr]))
 
     return np.array(converted)
 
@@ -61,8 +65,6 @@ def mae(prediction, reference):
     return np.mean(np.abs(prediction - reference))
 
 
-
-#def CV(representations, Q, y, param_grid={'kernel_sigma': np.logspace(-0.5, 0.5, num=20), 'kernel_lambda':  np.logspace(-7, -2, num=10)}, kfn=5, refit=True):
 def CV(representations,y, param_grid, kfn=5, refit=True):
     
     """
@@ -102,3 +104,47 @@ def CV(representations,y, param_grid, kfn=5, refit=True):
     if refit:
         alphas_opt = train(representations,y,opt_p['kernel_sigma'], opt_p['kernel_lambda'])
         return alphas_opt, opt_p
+
+
+
+def loadXYZ(filename, ang2bohr=False):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        numAtoms = int(lines[0])
+        positions = np.zeros((numAtoms, 3), dtype=np.double)
+        elems = [None] * numAtoms
+        comment = lines[1]
+        for x in range (2, 2 + numAtoms):
+            line_split = lines[x].rsplit()
+            elems[x - 2] = line_split[0]
+            
+            line_split[1] = line_split[1].replace('*^', 'E')
+            line_split[2] = line_split[2].replace('*^', 'E')
+            line_split[3] = line_split[3].replace('*^', 'E')
+            
+            positions[x - 2][0] = np.double(line_split[1]) 
+            positions[x - 2][1] = np.double(line_split[2]) 
+            positions[x - 2][2] = np.double(line_split[3])
+            if (ang2bohr):
+                positions[x - 2][0] *= angstrom2bohr
+                positions[x - 2][1] *= angstrom2bohr
+                positions[x - 2][2] *= angstrom2bohr
+                
+    return np.asarray(elems), np.asarray(positions), comment
+
+
+def writeXYZ(fileName, elems, positions, comment='', ang2bohr=False):
+    with open (fileName, 'w') as f:
+        f.write(str(len(elems)) + "\n")
+        if (comment is not None):
+            if ('\n' in comment):
+                f.write(comment)
+            else:
+                f.write(comment + '\n')
+        for x in range (0, len(elems)):
+            if (ang2bohr):
+                positions[x][0] *= angstrom2bohr
+                positions[x][1] *= angstrom2bohr
+                positions[x][2] *= angstrom2bohr
+            f.write(elems[x] +" "+str(positions[x][0]) +  " " +    str(positions[x][1]) +" "+ str(positions[x][2]) + "\n")
+    f.close()

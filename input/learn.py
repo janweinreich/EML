@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 import random
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import lib_CM as fml
+import lib as lib
 import numpy as np
 random.seed(1337)
 np.random.seed(1337)
@@ -15,7 +15,7 @@ new_data, new_hyper = True, False
 if __name__ == "__main__":
 
     
-    path_to_file = "/store/jan/datasets/qm9_data.npz"
+    path_to_file = "./input/data/qm9_data.npz"
     qm9 = np.load(path_to_file, allow_pickle=True)
     data = qm9
     Nmax = 30000
@@ -35,7 +35,7 @@ if __name__ == "__main__":
         X = []
         for q, r in tqdm(zip(nuclear_charges, coords), total=len(energies)):
             
-            X.append(fml.get_single_CM(q, r))
+            X.append(lib.get_single_CM(q, r))
             
         X, Q = np.array(X), nuclear_charges
         print(X.shape)
@@ -62,10 +62,10 @@ if __name__ == "__main__":
         for n in [16384]:  
 
             X_curr,  y_curr = X_train[:n], y_train[:n]
-            alphas, opt_p = fml.CV(X_curr, y_curr, param_grid)
+            alphas, opt_p = lib.CV(X_curr, y_curr, param_grid)
 
-            predictions   = fml.pred(X_curr, X_test,alphas, opt_p['kernel_sigma'])
-            MAE = fml.mae(predictions, y_test)
+            predictions   = lib.pred(X_curr, X_test,alphas, opt_p['kernel_sigma'])
+            MAE = lib.mae(predictions, y_test)
             print(n, MAE, opt_p)
             lrn_crv.append(MAE)
 

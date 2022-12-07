@@ -56,8 +56,10 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 3) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
 
-4) Generate input files for the oblivious transfer protocol using the `learn.py` script
+4) Download prepared QM9 data `wget https://ndownloader.figshare.com/files/28893843 -O "input/data/qm9_data.npz"`
 
-5) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to Alice and Bob
+5) Generate input files for the oblivious transfer protocol using the `learn.py` script
 
-6) 
+6) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to Alice and Bob
+
+7) 

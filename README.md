@@ -62,4 +62,11 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 6) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to Alice and Bob
 
-7) 
+# Run 
+
+- If you want to compute a learning curve using the CM use the SLURM submission script `sub.sh`.
+- For a simple example and a single prediction follow these steps:
+
+
+    1) 
+

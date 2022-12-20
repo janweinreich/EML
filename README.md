@@ -1,4 +1,3 @@
-# Documentation still being updated!!!
 # EML
 Encrypted machine learning of molecular quantum properties
 
@@ -106,8 +105,11 @@ Single line with CM of query molecule
 
 - If you want to compute a learning curve using the CM use the SLURM submission script `sub.sh`. 
 - To reproduce the timinig benchmarks from the paper, make sure to lauch only one process at a time.
+
 - For a simple example and a single prediction follow these steps:
 
 
-    1) 
-
+    1) go to the main folder `cd EML` and then to the solder `single_prediction`
+    2) bash run.sh
+    The result of the encryptd prediction and as well as the python prediction will be printed to the terminal.
+    (let's hope they are the same!!!)

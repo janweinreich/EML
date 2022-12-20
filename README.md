@@ -53,7 +53,13 @@ batch_size: This is the number of samples to include in each mini-batch during t
 
 1) Install the python dependencies `pip install -r requirements.txt`
 
-2) Download the software package MP-SPDZ needed to perform oblivious transfer calculations (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ into the main folder
+2) Download the software package MP-SPDZ needed to perform oblivious transfer calculations (tested with version mp-spdz-0.2.5) from https://github.com/data61/MP-SPDZ into the main folder.
+
+`wget https://github.com/data61/MP-SPDZ/releases/download/v0.2.5/mp-spdz-0.2.5.tar.xz`
+
+extract it 
+tar -xf mp-spdz-0.2.5.tar.xz
+
 
 3) Copy `CM.pmc` into the subdirectory /mp-spdz-0.2.5/Programs/Source/
 
@@ -65,6 +71,14 @@ batch_size: This is the number of samples to include in each mini-batch during t
 6) Copy input files to `/mp-spdz-0.2.5/Player-Data/Input-P0-0` and `/Input-P0-1` respectively corresponding to ALICE (dataholder) and BOB (query)
 
 # Format of input
+
+
+Download the input files
+
+https://figshare.com/articles/dataset/Encrypted_machine_learning_of_molecular_quantum_properties_Input_files/21757343
+
+and unpack them into
+EML/input/data
 
 The input has the following format:
 

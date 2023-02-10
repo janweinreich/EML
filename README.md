@@ -7,8 +7,10 @@ Unfortunately, contemporary ML models based on fully homomorphic encryption or f
 
 We have implemented secure and efficient encrypted machine learning (EML) models using oblivious transfer enabling efficient and secure predictions of molecular quantum properties across chemical compound space. The performance of our encrypted kernel-ridge regression models indicates a dire need for a compact ML model architecture, including molecular representation and kernel matrix size, that minimizes model evaluation costs.
 
-# Encrypted Kernel-Ridge Regression Predictions
+# Encrypted Kernel-Ridge Regression Predictions using Multi party Computation
 
+If you wan to learn more above MPC before going on I recommend this tutorial
+https://github.com/martstr/mp-spdz-tutorial
 The `CM.mpc` script first sets the numerical precision of its calculations to 42 bits and sets the precision of the output to the terminal. It then defines a few variables, including sigma, which is the width of the kernel used in the regression.
 
 Next, the script reads in training data and test data from two input files and computes the kernel matrix overlap between the test data and the training data. This is done using a gaussian kernel function, which is applied to the dot product of the test data and the training data.

@@ -1,6 +1,6 @@
 # pylint: disable=too-many-lines,invalid-name
 import warnings
-
+import sys
 # For warnings in xgboost.sklearn
 warnings.simplefilter(action="ignore", category=FutureWarning)
 #https://github.com/zama-ai/concrete-ml/blob/release/0.6.x/docs/advanced_examples/XGBRegressor.ipynb
@@ -27,10 +27,11 @@ random.seed(42)
 
 class data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0) -> None:
+    def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0, avg_hydrogens=True) -> None:
         self.property = property
         self.Nmax = Nmax
         self.bin_size = binsize
+        self.avg_hydrogens = avg_hydrogens
 
 
     def qm9_loader(self):
@@ -54,25 +55,41 @@ class data_preprocess:
         nuclear_charges = nuclear_charges[inds]
         elements = elements[inds]
         properties = properties[inds]
-
         self.qm9_inds = qm9_inds[:self.Nmax]
         self.coords = coords[:self.Nmax]
         self.nuclear_charges = nuclear_charges[:self.Nmax]
         self.elements = elements[:self.Nmax]
         self.properties = properties[:self.Nmax]
 
+    def reduce_hydrogens(self,q,x):
+        
+        hydro_inds = q == 1
+        x_heavy = x[np.argwhere(hydro_inds==False).flatten()]
+        x_hydro = x[np.argwhere(hydro_inds==True).flatten()]
+        x_avg_hydro =  np.vstack((x_heavy, np.mean(x_hydro,axis=0))).flatten()
+
+        return x_avg_hydro
+
     def gen_rep(self):
         mbdf = MBDF.generate_mbdf(self.nuclear_charges,self.coords, n_jobs=-1,normalized = False, progress=False)
-        pdb.set_trace()
-        self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
+        X = []
+        if self.avg_hydrogens:
+            for q, x in zip(self.nuclear_charges, mbdf):
+                X.append(self.reduce_hydrogens(q,x))
+            X = np.array(X)
+            max_size = max([len(subarray) for subarray in X])
+            self.X = np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
+            pdb.set_trace()
+        else:
+            self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
 
     def split_data(self):
+
         X_train, X_test, y_train, y_test = train_test_split(self.X, self.properties, test_size=0.2, random_state=42)
-        
         self.X_train = X_train
-        self.X_test = X_test
+        self.X_test  = X_test
         self.y_train = y_train
-        self.y_test = y_test
+        self.y_test  = y_test
         
     
     def run(self):
@@ -189,6 +206,22 @@ if __name__ == "__main__":
     fhemodel_dev = FHEModelDev(network.dev_dir.name, fhe_boost.concrete_reg)
     fhemodel_dev.save()
     print(os.listdir(network.dev_dir.name))
-    pdb.set_trace()
+    network.dev_send_model_to_server()
+    # Let's send the clientspecs and evaluation key to the client
+    network.dev_send_clientspecs_and_modelspecs_to_client()
     #y_pred = fhe_boost.predict(X_test, execute_in_fhe=True)
     
+    # Let's create the client and load the model
+    fhemodel_client = FHEModelClient(network.client_dir.name, key_dir=network.client_dir.name)
+
+    # The client first need to create the private and evaluation keys.
+    fhemodel_client.generate_private_and_evaluation_keys()
+    # Get the serialized evaluation keys
+    serialized_evaluation_keys = fhemodel_client.get_serialized_evaluation_keys()
+    print(f"Evaluation keys size: {sys.getsizeof(serialized_evaluation_keys) / 1024 / 1024:.2f} MB")
+    # Let's send this evaluation key to the server (this has to be done only once)
+    network.client_send_evaluation_key_to_server(serialized_evaluation_keys)
+    print(os.listdir(network.server_dir.name))
+    print(os.listdir(network.client_dir.name))
+    print(os.listdir(network.dev_dir.name))
+    pdb.set_trace()

@@ -21,6 +21,8 @@ import pdb
 from tempfile import TemporaryDirectory
 from concrete.ml.deployment import FHEModelClient, FHEModelDev, FHEModelServer
 from shutil import copyfile
+import sklearn
+
 np.random.seed(42)
 random.seed(42)
 
@@ -79,7 +81,6 @@ class data_preprocess:
             X = np.array(X)
             max_size = max([len(subarray) for subarray in X])
             self.X = np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
-            pdb.set_trace()
         else:
             self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
 
@@ -112,7 +113,7 @@ class fhe_boost:
             "max_depth": [4],
             "n_estimators": [10, 20, 50, 100],
         }
-        
+        pdb.set_trace()
         grid_search_concrete = GridSearchCV(ConcreteXGBRegressor(), param_grid, cv=n_folds, n_jobs=n_jobs)
         if N_max is not None:
             grid_search_concrete.fit(self.X_train[:N_max], self.y_train[:N_max])
@@ -120,6 +121,7 @@ class fhe_boost:
             grid_search_concrete.fit(self.X_train, self.y_train)
 
         self.best_params_xgboost = grid_search_concrete.best_params_
+        self.concrete_reg = grid_search_concrete.best_estimator_
         
     
     def quantize_model(self, N_max):
@@ -193,12 +195,21 @@ class OnDiskNetwork:
 if __name__ == "__main__":
 
     #Development Server
+    N_train = [2**i for i in range(5, 10)]
     X_train, X_test, y_train, y_test = data_preprocess().run()
-    #pdb.set_trace()
-    fhe_boost = fhe_boost(X_train, y_train)
+    
 
-    fhe_boost.cross_validation(N_max=100)
-    fhe_boost.quantize_model(N_max=100)
+    fhe_boost = fhe_boost(X_train, y_train)
+    for n in N_train:
+        fhe_boost.cross_validation(N_max=n)
+        y_pred_clear = fhe_boost.predict(X_test, execute_in_fhe=False)
+        #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
+        MAE = sklearn.metric.mean_absolute_error(y_test, y_pred_clear)
+        print(n, MAE)
+
+
+    pdb.set_trace()
+    #fhe_boost.quantize_model(N_max=100)
     print("Model trained and compiled.")
 
     # Let's instantiate the network

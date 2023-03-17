@@ -22,6 +22,8 @@ from tempfile import TemporaryDirectory
 from concrete.ml.deployment import FHEModelClient, FHEModelDev, FHEModelServer
 from shutil import copyfile
 import sklearn
+#import mean absolute error from sklearn
+from sklearn.metrics import mean_absolute_error as mae
 
 np.random.seed(42)
 random.seed(42)
@@ -113,7 +115,7 @@ class fhe_boost:
             "max_depth": [4],
             "n_estimators": [10, 20, 50, 100],
         }
-        pdb.set_trace()
+        #pdb.set_trace()
         grid_search_concrete = GridSearchCV(ConcreteXGBRegressor(), param_grid, cv=n_folds, n_jobs=n_jobs)
         if N_max is not None:
             grid_search_concrete.fit(self.X_train[:N_max], self.y_train[:N_max])
@@ -196,16 +198,20 @@ if __name__ == "__main__":
 
     #Development Server
     N_train = [2**i for i in range(5, 10)]
-    X_train, X_test, y_train, y_test = data_preprocess().run()
-    
 
-    fhe_boost = fhe_boost(X_train, y_train)
-    for n in N_train:
-        fhe_boost.cross_validation(N_max=n)
-        y_pred_clear = fhe_boost.predict(X_test, execute_in_fhe=False)
-        #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
-        MAE = sklearn.metric.mean_absolute_error(y_test, y_pred_clear)
-        print(n, MAE)
+    hydros = [False, True]
+    for h in hydros:
+
+        X_train, X_test, y_train, y_test = data_preprocess(avg_hydrogens=h).run()
+        
+
+        fhe_boost = fhe_boost(X_train, y_train)
+        for n in N_train:
+            fhe_boost.cross_validation(N_max=n)
+            y_pred_clear = fhe_boost.predict(X_test, execute_in_fhe=False)
+            #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
+            MAE = mae(y_test, y_pred_clear)
+            print(n, MAE)
 
 
     pdb.set_trace()

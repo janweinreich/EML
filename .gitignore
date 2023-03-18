@@ -5,7 +5,14 @@ __pycache__/
 
 # C extensions
 *.so
-
+*.cpp
+*.h
+*.hpp
+*.rst
+PRED_*
+Makefile
+MODEL_*
+X_QUERY_*
 # Distribution / packaging
 .Python
 build/

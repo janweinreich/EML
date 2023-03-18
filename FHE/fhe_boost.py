@@ -21,7 +21,8 @@ import pdb
 from tempfile import TemporaryDirectory
 from concrete.ml.deployment import FHEModelClient, FHEModelDev, FHEModelServer
 from shutil import copyfile
-import sklearn
+from tqdm import tqdm
+
 #import mean absolute error from sklearn
 from sklearn.metrics import mean_absolute_error as mae
 
@@ -29,7 +30,7 @@ np.random.seed(42)
 random.seed(42)
 
 
-class data_preprocess:
+class Data_preprocess:
 
     def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0, avg_hydrogens=True) -> None:
         self.property = property
@@ -100,9 +101,13 @@ class data_preprocess:
         self.gen_rep()
         self.split_data()
         return self.X_train, self.X_test, self.y_train, self.y_test
+    
 
 
-class fhe_boost:
+
+
+
+class Fhe_boost:
     def __init__(self, X_train, y_train) -> None:
         self.X_train = X_train
         self.y_train = y_train
@@ -127,18 +132,80 @@ class fhe_boost:
         
     
     def quantize_model(self, N_max):
-        self.concrete_reg = ConcreteXGBRegressor(**self.best_params_xgboost, n_jobs=-1)
+        #self.concrete_reg = ConcreteXGBRegressor(**self.best_params_xgboost, n_jobs=-1)
         if N_max is not None:
-            self.concrete_reg.fit(self.X_train[:N_max], self.y_train[:N_max])
+            #self.concrete_reg.fit(self.X_train[:N_max], self.y_train[:N_max])
             self.circuit = self.concrete_reg.compile(self.X_train[:N_max])
         else:
-            self.concrete_reg.fit(self.X_train, self.y_train)
+            #self.concrete_reg.fit(self.X_train, self.y_train)
             self.circuit = self.concrete_reg.compile(self.X_train)
         print(f"Generating a key for an {self.circuit.graph.maximum_integer_bit_width()}-bits circuit")
         self.circuit.client.keygen(force=False)
     
-    def predict(self, X_test, execute_in_fhe=True ):
+    def predict(self, X_test, execute_in_fhe=True):
         return self.concrete_reg.predict(X_test, execute_in_fhe=execute_in_fhe)
+    
+
+
+class Test_fhe_boost(Fhe_boost):
+    def __init__(self, subject="test_hydro") -> None:
+        self.subject = subject
+
+        if self.subject == "test_hydro":
+            self.test_hydro_averaging()
+        elif self.subject == "test_rep_len":
+            self.test_rep_len()
+    
+    def test_rep_len(self):
+        n = 32
+        #binsize make intervals of 0.1 between 0.1 and 3.0 wiht linspace
+        binsizes  = np.linspace(0.1, 3.0, 10)
+        for b in binsizes:
+            X_train, X_test, y_train, y_test = Data_preprocess(binsize=b, avg_hydrogens=False).run()
+            X_test, y_test = X_test[:10], y_test[:10]
+            repshape = X_train.shape[1]
+            fhe_instance = Fhe_boost(X_train, y_train)
+            fhe_instance.cross_validation(N_max=n)
+            fhe_instance.quantize_model(N_max=n)
+
+            time_begin = time.time()
+            y_pred_fhe = []
+            for i in tqdm(range(len(X_test))):
+                y_pred_fhe.append(fhe_instance.predict(X_test[i].reshape(1,-1), execute_in_fhe=True))
+            runtime_fhe = time.time() - time_begin
+            y_pred_fhe = np.array(y_pred_fhe)
+
+            time_begin = time.time()
+            y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
+            runtime_clear = time.time() - time_begin
+            print(f"Runtime per sample FHE : {(runtime_fhe) / len(X_test):.2f} sec")
+            print(f"Runtime per sample clear: {(runtime_clear) / len(X_test):.2f} sec")
+            MAE_fhe = mae(y_test, y_pred_fhe)
+            MAE_clear = mae(y_test, y_pred_clear)
+            print(b, repshape,runtime_fhe,runtime_clear, MAE_fhe, MAE_clear)
+
+
+
+
+
+    def test_hydro_averaging(self):
+        #Test model with hydrogen averaging and without
+        N_train = [2**i for i in range(5, 10)]
+
+        hydros = [False, True]
+        for h in hydros:
+
+            X_train, X_test, y_train, y_test = Data_preprocess(avg_hydrogens=h).run()
+            
+
+            fhe_instance = Fhe_boost(X_train, y_train)
+            for n in N_train:
+                fhe_instance.cross_validation(N_max=n)
+                y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
+                #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
+                MAE = mae(y_test, y_pred_clear)
+                print(n, MAE)
+
 
 
 class OnDiskNetwork:
@@ -193,25 +260,14 @@ class OnDiskNetwork:
         self.dev_dir.cleanup()
 
 
+
+
 # main
 if __name__ == "__main__":
 
     #Development Server
-    N_train = [2**i for i in range(5, 10)]
-
-    hydros = [False, True]
-    for h in hydros:
-
-        X_train, X_test, y_train, y_test = data_preprocess(avg_hydrogens=h).run()
-        
-
-        fhe_boost = fhe_boost(X_train, y_train)
-        for n in N_train:
-            fhe_boost.cross_validation(N_max=n)
-            y_pred_clear = fhe_boost.predict(X_test, execute_in_fhe=False)
-            #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
-            MAE = mae(y_test, y_pred_clear)
-            print(n, MAE)
+    # 1) 
+    Test_fhe_boost(subject="test_rep_len")
 
 
     pdb.set_trace()
@@ -220,7 +276,7 @@ if __name__ == "__main__":
 
     # Let's instantiate the network
     network = OnDiskNetwork()
-    fhemodel_dev = FHEModelDev(network.dev_dir.name, fhe_boost.concrete_reg)
+    fhemodel_dev = FHEModelDev(network.dev_dir.name, Fhe_boost.concrete_reg)
     fhemodel_dev.save()
     print(os.listdir(network.dev_dir.name))
     network.dev_send_model_to_server()

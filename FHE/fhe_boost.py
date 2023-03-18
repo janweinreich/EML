@@ -129,6 +129,13 @@ class Fhe_boost:
 
         self.best_params_xgboost = grid_search_concrete.best_params_
         self.concrete_reg = grid_search_concrete.best_estimator_
+
+    def train(self, N_max,params):
+        self.concrete_reg = ConcreteXGBRegressor(**params, n_jobs=-1)
+        if N_max is not None:
+            self.concrete_reg.fit(self.X_train[:N_max], self.y_train[:N_max])
+        else:
+            self.concrete_reg.fit(self.X_train, self.y_train)
         
     
     def quantize_model(self, N_max):
@@ -165,13 +172,13 @@ class Test_fhe_boost(Fhe_boost):
             X_test, y_test = X_test[:10], y_test[:10]
             repshape = X_train.shape[1]
             fhe_instance = Fhe_boost(X_train, y_train)
-            fhe_instance.cross_validation(N_max=n)
+            fhe_instance.train(N_max=n, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
             fhe_instance.quantize_model(N_max=n)
 
             time_begin = time.time()
             y_pred_fhe = []
             for i in tqdm(range(len(X_test))):
-                y_pred_fhe.append(fhe_instance.predict(X_test[i].reshape(1,-1), execute_in_fhe=True))
+                y_pred_fhe.append(fhe_instance.predict(X_test[i].reshape(1,-1), execute_in_fhe=True)[0][0])
             runtime_fhe = time.time() - time_begin
             y_pred_fhe = np.array(y_pred_fhe)
 

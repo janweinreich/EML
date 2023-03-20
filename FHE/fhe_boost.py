@@ -117,7 +117,7 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [2, 3, 4, 5, 6, 7],
-            "max_depth": [4],
+            "max_depth": [4, 6],
             "n_estimators": [10, 20, 50, 100],
         }
         #pdb.set_trace()
@@ -161,57 +161,93 @@ class Test_fhe_boost(Fhe_boost):
         if self.subject == "test_hydro":
             self.test_hydro_averaging()
         elif self.subject == "test_rep_len":
+            self.binsizes  = np.linspace(0.1, 3.0, 10)
             self.test_rep_len()
     
     def test_rep_len(self):
-        n = 32
+        self.n_train_max = 128
         #binsize make intervals of 0.1 between 0.1 and 3.0 wiht linspace
-        binsizes  = np.linspace(0.1, 3.0, 10)
-        for b in binsizes:
+        
+        self.test_rep_len_results = {}
+
+        rep_shapes, fhe_times,clear_times, fhe_mae, clear_mae = [], [], [], [], []
+        for b in self.binsizes:
             X_train, X_test, y_train, y_test = Data_preprocess(binsize=b, avg_hydrogens=False).run()
             X_test, y_test = X_test[:10], y_test[:10]
             repshape = X_train.shape[1]
             fhe_instance = Fhe_boost(X_train, y_train)
-            fhe_instance.train(N_max=n, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
-            fhe_instance.quantize_model(N_max=n)
+            fhe_instance.train(N_max=self.n_train_max, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
+            fhe_instance.quantize_model(N_max=self.n_train_max)
 
             time_begin = time.time()
             y_pred_fhe = []
             for i in tqdm(range(len(X_test))):
                 y_pred_fhe.append(fhe_instance.predict(X_test[i].reshape(1,-1), execute_in_fhe=True)[0][0])
-            runtime_fhe = time.time() - time_begin
+            runtime_fhe = (time.time() - time_begin)/len(X_test)
             y_pred_fhe = np.array(y_pred_fhe)
 
             time_begin = time.time()
             y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
-            runtime_clear = time.time() - time_begin
-            print(f"Runtime per sample FHE : {(runtime_fhe) / len(X_test):.2f} sec")
-            print(f"Runtime per sample clear: {(runtime_clear) / len(X_test):.2f} sec")
+            runtime_clear = (time.time() - time_begin)/len(X_test)
+            print(f"Runtime per sample FHE : {(runtime_fhe):.2f} sec")
+            print(f"Runtime per sample clear: {(runtime_clear):.2f} sec")
+
             MAE_fhe = mae(y_test, y_pred_fhe)
             MAE_clear = mae(y_test, y_pred_clear)
             print(b, repshape,runtime_fhe,runtime_clear, MAE_fhe, MAE_clear)
 
+            rep_shapes.append(repshape)
+            fhe_times.append(runtime_fhe)
+            clear_times.append(runtime_clear)
+            fhe_mae.append(MAE_fhe)
+            clear_mae.append(MAE_clear)
 
-
-
+        
+        rep_shapes, fhe_times,clear_times, fhe_mae, clear_mae = np.array(rep_shapes), np.array(fhe_times), np.array(clear_times), np.array(fhe_mae), np.array(clear_mae)
+        self.test_rep_len_results["rep_shapes"] = rep_shapes
+        self.test_rep_len_results["fhe_times"] = fhe_times
+        self.test_rep_len_results["clear_times"] = clear_times
+        self.test_rep_len_results["fhe_mae"] = fhe_mae
+        self.test_rep_len_results["clear_mae"] = clear_mae
+        self.test_rep_len_results["binsizes"] = self.binsizes
+        self.test_rep_len_results["n_train_max"] = self.n_train_max
+    
 
     def test_hydro_averaging(self):
         #Test model with hydrogen averaging and without
-        N_train = [2**i for i in range(5, 10)]
+        self.test_hydro_averaging_results = {}
+
+        self.N_train = [2**i for i in range(5, 15)]
 
         hydros = [False, True]
         for h in hydros:
 
+
             X_train, X_test, y_train, y_test = Data_preprocess(avg_hydrogens=h).run()
             
-
+            learning_curve = []
             fhe_instance = Fhe_boost(X_train, y_train)
-            for n in N_train:
+            for n in self.N_train:
                 fhe_instance.cross_validation(N_max=n)
                 y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
-                #y_pred_fhe = fhe_boost.predict(X_test, execute_in_fhe=True)
                 MAE = mae(y_test, y_pred_clear)
                 print(n, MAE)
+                learning_curve.append(MAE)
+            
+            curr_results = {}
+            curr_results["learning_curve"] = learning_curve
+            curr_results["rep_shape"] = X_train.shape[1]
+
+
+            if h:
+                self.test_hydro_averaging_results["hydro"] = curr_results
+            else:
+                self.test_hydro_averaging_results["no_hydro"] = curr_results
+
+        self.test_hydro_averaging_results["N_train"] = self.N_train
+
+
+            
 
 
 

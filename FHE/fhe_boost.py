@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines,invalid-name
 import warnings
 import sys
 # For warnings in xgboost.sklearn
@@ -6,15 +5,11 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 #https://github.com/zama-ai/concrete-ml/blob/release/0.6.x/docs/advanced_examples/XGBRegressor.ipynb
 import time
 import os
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
-from sklearn import metrics
+import pickle
 from sklearn.model_selection import GridSearchCV, train_test_split
-from xgboost.sklearn import XGBRegressor as SklearnXGBRegressor
 import wget
-from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge
+from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor
 import random
 import MBDF
 import pdb
@@ -155,14 +150,10 @@ class Fhe_boost:
 
 
 class Test_fhe_boost(Fhe_boost):
-    def __init__(self, subject="test_hydro") -> None:
-        self.subject = subject
+    def __init__(self) -> None:
 
-        if self.subject == "test_hydro":
-            self.test_hydro_averaging()
-        elif self.subject == "test_rep_len":
-            self.binsizes  = np.linspace(0.1, 3.0, 10)
-            self.test_rep_len()
+        self.binsizes  = np.linspace(0.1, 3.0, 10)
+
     
     def test_rep_len(self):
         self.n_train_max = 128
@@ -247,6 +238,14 @@ class Test_fhe_boost(Fhe_boost):
         self.test_hydro_averaging_results["N_train"] = self.N_train
 
 
+    def save_results(self):
+        """
+        Method to save this instance of the test class to pkl file
+        """
+        with open("Test_fhe_boost_results.pkl", "wb") as f:
+            pickle.dump(self, f)
+
+
             
 
 
@@ -310,7 +309,11 @@ if __name__ == "__main__":
 
     #Development Server
     # 1) 
-    Test_fhe_boost(subject="test_rep_len")
+    test_class = Test_fhe_boost()
+    test_class.test_rep_len()
+    test_class.test_hydro_averaging()
+    test_class.save_results()
+
 
 
     pdb.set_trace()

@@ -27,7 +27,7 @@ random.seed(42)
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0, avg_hydrogens=True) -> None:
+    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0, avg_hydrogens=True) -> None:
         self.property = property
         self.Nmax = Nmax
         self.bin_size = binsize
@@ -112,8 +112,8 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [2, 3, 4, 5, 6, 7],
-            "max_depth": [4, 6],
-            "n_estimators": [10, 20, 50, 100],
+            "max_depth": [4,5,6],
+            "n_estimators": [10, 20, 50, 100, 200],
         }
         #pdb.set_trace()
         grid_search_concrete = GridSearchCV(ConcreteXGBRegressor(), param_grid, cv=n_folds, n_jobs=n_jobs)
@@ -208,7 +208,7 @@ class Test_fhe_boost(Fhe_boost):
         #Test model with hydrogen averaging and without
         self.test_hydro_averaging_results = {}
 
-        self.N_train = [2**i for i in range(5, 15)]
+        self.N_train = [2**i for i in range(5, 16)]
 
         hydros = [False, True]
         for h in hydros:

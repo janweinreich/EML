@@ -27,9 +27,10 @@ random.seed(42)
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0, avg_hydrogens=True) -> None:
+    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0,local_rep=True, avg_hydrogens=True) -> None:
         self.property = property
         self.Nmax = Nmax
+        self.local_rep = local_rep
         self.bin_size = binsize
         self.avg_hydrogens = avg_hydrogens
 
@@ -71,14 +72,19 @@ class Data_preprocess:
         return x_avg_hydro
 
     def gen_rep(self):
+
         mbdf = MBDF.generate_mbdf(self.nuclear_charges,self.coords, n_jobs=-1,normalized = False, progress=False)
-        X = []
-        if self.avg_hydrogens:
-            for q, x in zip(self.nuclear_charges, mbdf):
-                X.append(self.reduce_hydrogens(q,x))
-            X = np.array(X)
-            max_size = max([len(subarray) for subarray in X])
-            self.X = np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
+
+        if self.local_rep:
+            if self.avg_hydrogens:
+                X = []
+                for q, x in zip(self.nuclear_charges, mbdf):
+                    X.append(self.reduce_hydrogens(q,x))
+                X = np.array(X)
+                max_size = max([len(subarray) for subarray in X])
+                self.X = np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
+            else:
+                self.X =  np.array([x.flatten() for x in mbdf])
         else:
             self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
 
@@ -97,10 +103,6 @@ class Data_preprocess:
         self.split_data()
         return self.X_train, self.X_test, self.y_train, self.y_test
     
-
-
-
-
 
 class Fhe_boost:
     def __init__(self, X_train, y_train) -> None:
@@ -153,9 +155,10 @@ class Test_fhe_boost(Fhe_boost):
     def __init__(self) -> None:
 
         self.binsizes  = np.linspace(0.1, 3.0, 10)
+        self.N_train = [2**i for i in range(5, 16)]
 
     
-    def test_rep_len(self):
+    def rep_len(self):
         self.n_train_max = 128
         #binsize make intervals of 0.1 between 0.1 and 3.0 wiht linspace
         
@@ -204,17 +207,14 @@ class Test_fhe_boost(Fhe_boost):
         self.test_rep_len_results["n_train_max"] = self.n_train_max
     
 
-    def test_hydro_averaging(self):
+    def local_hydro_averaging(self):
         #Test model with hydrogen averaging and without
         self.test_hydro_averaging_results = {}
-
-        self.N_train = [2**i for i in range(5, 16)]
-
         hydros = [False, True]
         for h in hydros:
 
 
-            X_train, X_test, y_train, y_test = Data_preprocess(avg_hydrogens=h).run()
+            X_train, X_test, y_train, y_test = Data_preprocess(local_rep=True, avg_hydrogens=h).run()
             
             learning_curve = []
             fhe_instance = Fhe_boost(X_train, y_train)
@@ -237,6 +237,24 @@ class Test_fhe_boost(Fhe_boost):
 
         self.test_hydro_averaging_results["N_train"] = self.N_train
 
+    def mbdf_global(self):
+        binsize = 0.05
+        #Test model with mbdf and without
+        self.test_mbdf_results = {}
+        X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, local_rep=False, avg_hydrogens=False).run()
+        learning_curve = []
+        fhe_instance = Fhe_boost(X_train, y_train)
+        for n in self.N_train:
+            fhe_instance.cross_validation(N_max=n)
+            y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
+            MAE = mae(y_test, y_pred_clear)
+            print(n, MAE)
+            learning_curve.append(MAE)
+        
+        self.test_mbdf_results["learning_curve"] = learning_curve
+        self.test_mbdf_results["rep_shape"] = X_train.shape[1]
+        self.test_mbdf_results["binsize"] = binsize
+        self.test_mbdf_results["N_train"] = self.N_train
 
     def save_results(self):
         """
@@ -310,8 +328,9 @@ if __name__ == "__main__":
     #Development Server
     # 1) 
     test_class = Test_fhe_boost()
-    test_class.test_rep_len()
-    test_class.test_hydro_averaging()
+    test_class.mbdf_global()
+    test_class.rep_len()
+    test_class.local_hydro_averaging()
     test_class.save_results()
 
 

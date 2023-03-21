@@ -17,20 +17,34 @@ from tempfile import TemporaryDirectory
 from concrete.ml.deployment import FHEModelClient, FHEModelDev, FHEModelServer
 from shutil import copyfile
 from tqdm import tqdm
-
-#import mean absolute error from sklearn
+from qstack import compound, spahm
 from sklearn.metrics import mean_absolute_error as mae
 
 np.random.seed(42)
 random.seed(42)
 
 
+
+def mol_to_xyz(els, coords, filename="curr.xyz"):
+    #if not exist tmp dir create it
+    if not os.path.exists("tmp"):
+        os.mkdir("tmp")
+
+    path_to_temp_xyz = os.path.join("tmp", filename)
+    with open(path_to_temp_xyz, 'w') as f:
+        f.write(str(len(els)) + "\n")
+        f.write("\n")
+        for el, coord in zip(els, coords):
+            f.write(str(el) + " {} {} {}\n".format(*coord))
+    f.close()
+    return path_to_temp_xyz
+
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0,local_rep=True, avg_hydrogens=True) -> None:
+    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
         self.Nmax = Nmax
-        self.local_rep = local_rep
+        self.rep_type = "spahm"
         self.bin_size = binsize
         self.avg_hydrogens = avg_hydrogens
 
@@ -72,21 +86,46 @@ class Data_preprocess:
         return x_avg_hydro
 
     def gen_rep(self):
+        
+        if "mbdf" in self.rep_type:
+            mbdf = MBDF.generate_mbdf(self.nuclear_charges,self.coords, n_jobs=-1,normalized = False, progress=False)
 
-        mbdf = MBDF.generate_mbdf(self.nuclear_charges,self.coords, n_jobs=-1,normalized = False, progress=False)
+            if self.rep_type=="local_mbdf":
+                if self.avg_hydrogens:
+                    X = []
+                    for q, x in zip(self.nuclear_charges, mbdf):
+                        X.append(self.reduce_hydrogens(q,x))
+                    X = np.array(X)
 
-        if self.local_rep:
-            if self.avg_hydrogens:
-                X = []
-                for q, x in zip(self.nuclear_charges, mbdf):
-                    X.append(self.reduce_hydrogens(q,x))
-                X = np.array(X)
-                max_size = max([len(subarray) for subarray in X])
-                self.X = np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
-            else:
-                self.X =  np.array([x.flatten() for x in mbdf])
+                    self.X = self.pad_max_size(X)
+                else:
+                    self.X =  np.array([x.flatten() for x in mbdf])
+            elif self.rep_type == "global_mbdf":
+                self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
+
+        
+        elif self.rep_type == "spahm":
+            
+            X = []
+            for els, coord in zip(self.elements, self.coords):
+                mol_name = mol_to_xyz(els, coord)
+                
+                mol = compound.xyz_to_mol(mol_name, 'def2svp', charge=0, spin=0)
+                os.remove(mol_name)
+                X.append(spahm.compute_spahm.get_spahm_representation(mol, "lb")[0])
+                #pdb.set_trace()
+
+            self.X = np.array(X)
+            self.X = self.pad_max_size(self.X)
+
         else:
-            self.X = MBDF.generate_DF(mbdf,self.nuclear_charges,  binsize=self.bin_size)
+            raise ValueError("rep_type must be either local_mbdf, global_mbdf or spahm!")
+
+
+    def pad_max_size(self, X):
+        max_size = max([len(subarray) for subarray in X])
+        X= np.array([np.pad(subarray, (0, max_size - len(subarray)), 'constant') for subarray in X])
+        return X
 
     def split_data(self):
 
@@ -117,7 +156,7 @@ class Fhe_boost:
             "max_depth": [4,5,6],
             "n_estimators": [10, 20, 50, 100, 200],
         }
-        #pdb.set_trace()
+
         grid_search_concrete = GridSearchCV(ConcreteXGBRegressor(), param_grid, cv=n_folds, n_jobs=n_jobs)
         if N_max is not None:
             grid_search_concrete.fit(self.X_train[:N_max], self.y_train[:N_max])
@@ -214,7 +253,7 @@ class Test_fhe_boost(Fhe_boost):
         for h in hydros:
 
 
-            X_train, X_test, y_train, y_test = Data_preprocess(local_rep=True, avg_hydrogens=h).run()
+            X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf", avg_hydrogens=h).run()
             
             learning_curve = []
             fhe_instance = Fhe_boost(X_train, y_train)
@@ -241,20 +280,40 @@ class Test_fhe_boost(Fhe_boost):
         binsize = 0.05
         #Test model with mbdf and without
         self.test_mbdf_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, local_rep=False, avg_hydrogens=False).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False).run()
         learning_curve = []
         fhe_instance = Fhe_boost(X_train, y_train)
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
             MAE = mae(y_test, y_pred_clear)
-            print(n, MAE)
+            print(n,fhe_instance.best_params_xgboost, MAE)
             learning_curve.append(MAE)
         
         self.test_mbdf_results["learning_curve"] = learning_curve
         self.test_mbdf_results["rep_shape"] = X_train.shape[1]
         self.test_mbdf_results["binsize"] = binsize
         self.test_mbdf_results["N_train"] = self.N_train
+
+    def spahm_global(self):
+        self.test_spahm_global_results = {}
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False).run()
+        
+        learning_curve = []
+        fhe_instance = Fhe_boost(X_train, y_train)
+        for n in self.N_train:
+            fhe_instance.cross_validation(N_max=n)
+            y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
+            MAE = mae(y_test, y_pred_clear)
+            print(n,fhe_instance.best_params_xgboost, MAE)
+            learning_curve.append(MAE)
+
+        self.test_spahm_global_results["learning_curve"] = learning_curve
+        self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
+        self.test_spahm_global_results["N_train"] = self.N_train
+
+
+
 
     def save_results(self):
         """
@@ -328,6 +387,8 @@ if __name__ == "__main__":
     #Development Server
     # 1) 
     test_class = Test_fhe_boost()
+    test_class.spahm_global()
+    exit()
     test_class.mbdf_global()
     test_class.rep_len()
     test_class.local_hydro_averaging()

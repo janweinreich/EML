@@ -41,7 +41,7 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=60000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
+    def __init__(self, property = "H_atomization",Nmax=130831, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
         self.Nmax = Nmax
         self.rep_type = "spahm"
@@ -57,6 +57,7 @@ class Data_preprocess:
             filename = wget.download(url)
             qm9 = np.load("qm9_data.npz", allow_pickle=True)
 
+        pdb.set_trace()
         qm9_inds = qm9["index"]
         coords = qm9['coordinates']
         nuclear_charges = qm9['charges']
@@ -152,9 +153,9 @@ class Fhe_boost:
         n_folds = 5
         n_jobs = -1
         param_grid = {
-            "n_bits": [2, 3, 4, 5, 6, 7],
-            "max_depth": [4,5,6],
-            "n_estimators": [10, 20, 50, 100, 200],
+            "n_bits": [3, 4, 5, 6, 7],
+            "max_depth": [5,6, 8, 10],
+            "n_estimators": [10,15, 20, 25, 50],
         }
 
         grid_search_concrete = GridSearchCV(ConcreteXGBRegressor(), param_grid, cv=n_folds, n_jobs=n_jobs)
@@ -194,7 +195,7 @@ class Test_fhe_boost(Fhe_boost):
     def __init__(self) -> None:
 
         self.binsizes  = np.linspace(0.1, 3.0, 10)
-        self.N_train = [2**i for i in range(5, 16)]
+        self.N_train = [2**i for i in range(5, 17)]
 
     
     def rep_len(self):
@@ -280,6 +281,7 @@ class Test_fhe_boost(Fhe_boost):
         #Test model with mbdf and without
         self.test_mbdf_results = {}
         X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False).run()
+        self.N_train.append(X_train.shape[0])
         learning_curve = []
         fhe_instance = Fhe_boost(X_train, y_train)
         for n in self.N_train:
@@ -297,7 +299,8 @@ class Test_fhe_boost(Fhe_boost):
     def spahm_global(self):
         self.test_spahm_global_results = {}
         X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False).run()
-        
+        print(X_train.shape[1])
+        self.N_train.append(X_train.shape[0])
         learning_curve = []
         fhe_instance = Fhe_boost(X_train, y_train)
         for n in self.N_train:
@@ -310,8 +313,6 @@ class Test_fhe_boost(Fhe_boost):
         self.test_spahm_global_results["learning_curve"] = learning_curve
         self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
         self.test_spahm_global_results["N_train"] = self.N_train
-
-
 
 
     def save_results(self):
@@ -387,7 +388,6 @@ if __name__ == "__main__":
     # 1) 
     test_class = Test_fhe_boost()
     test_class.spahm_global()
-    exit()
     test_class.mbdf_global()
     test_class.rep_len()
     test_class.local_hydro_averaging()

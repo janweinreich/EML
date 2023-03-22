@@ -105,9 +105,9 @@ class Data_preprocess:
 
         
         elif self.rep_type == "spahm":
-            
+            print("Generating spahm representations...")
             X = []
-            for els, coord in zip(self.elements, self.coords):
+            for els, coord in tqdm(zip(self.elements, self.coords), total=len(self.coords)):
                 mol_name = mol_to_xyz(els, coord)
                 
                 mol = compound.xyz_to_mol(mol_name, 'def2svp', charge=0, spin=0)
@@ -251,7 +251,6 @@ class Test_fhe_boost(Fhe_boost):
         self.test_hydro_averaging_results = {}
         hydros = [False, True]
         for h in hydros:
-
 
             X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf", avg_hydrogens=h).run()
             

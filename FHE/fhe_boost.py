@@ -57,7 +57,6 @@ class Data_preprocess:
             filename = wget.download(url)
             qm9 = np.load("qm9_data.npz", allow_pickle=True)
 
-        pdb.set_trace()
         qm9_inds = qm9["index"]
         coords = qm9['coordinates']
         nuclear_charges = qm9['charges']
@@ -394,7 +393,7 @@ if __name__ == "__main__":
     test_class.save_results()
 
 
-
+    exit
     pdb.set_trace()
     #fhe_boost.quantize_model(N_max=100)
     print("Model trained and compiled.")

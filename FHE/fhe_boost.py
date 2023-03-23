@@ -41,9 +41,9 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
+    def __init__(self, property = "H_atomization",N_max=10000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
-        self.Nmax = Nmax
+        self.N_max = N_max
         self.rep_type = rep_type
         self.bin_size = binsize
         self.avg_hydrogens = avg_hydrogens
@@ -64,8 +64,8 @@ class Data_preprocess:
         properties = np.array(qm9[self.property])
         N = len(qm9_inds)
 
-        if self.Nmax == "all":
-            self.Nmax = N
+        if self.N_max == "all":
+            self.N_max = N
 
         inds = np.arange(N)
         np.random.shuffle(inds)
@@ -74,11 +74,11 @@ class Data_preprocess:
         nuclear_charges = nuclear_charges[inds]
         elements = elements[inds]
         properties = properties[inds]
-        self.qm9_inds = qm9_inds[:self.Nmax]
-        self.coords = coords[:self.Nmax]
-        self.nuclear_charges = nuclear_charges[:self.Nmax]
-        self.elements = elements[:self.Nmax]
-        self.properties = properties[:self.Nmax]
+        self.qm9_inds = qm9_inds[:self.N_max]
+        self.coords = coords[:self.N_max]
+        self.nuclear_charges = nuclear_charges[:self.N_max]
+        self.elements = elements[:self.N_max]
+        self.properties = properties[:self.N_max]
 
     def reduce_hydrogens(self,q,x):
         
@@ -347,12 +347,13 @@ class Test_fhe():
 
     def spahm_global(self):
         self.test_spahm_global_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(Nmax = "all",rep_type="spahm", avg_hydrogens=False).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(N_max = 1000,rep_type="spahm", avg_hydrogens=False).run()
         print(X_train.shape[1])
         self.N_train.append(X_train.shape[0])
         learning_curve = []
         fhe_instance = self.regressor(X_train, y_train)
         for n in self.N_train:
+            #pdb.set_trace()
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
             MAE = mae(y_test, y_pred_clear)
@@ -362,6 +363,7 @@ class Test_fhe():
         self.test_spahm_global_results["learning_curve"] = learning_curve
         self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
         self.test_spahm_global_results["N_train"] = self.N_train
+        pdb.set_trace()
 
 
     def save_results(self):

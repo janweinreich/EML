@@ -241,10 +241,11 @@ class Fhe_ridge:
 
 
 class Test_fhe():
-    def __init__(self, regressor) -> None:
+    def __init__(self, regressor, outname) -> None:
         self.regressor = regressor
         self.binsizes  = np.linspace(0.1, 3.0, 10)
         self.N_train = [2**i for i in range(5, 17)]
+        self.outname = outname
 
     
     def rep_len(self):
@@ -347,7 +348,7 @@ class Test_fhe():
 
     def spahm_global(self):
         self.test_spahm_global_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(N_max = 1000,rep_type="spahm", avg_hydrogens=False).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(N_max = "all",rep_type="spahm", avg_hydrogens=False).run()
         print(X_train.shape[1])
         self.N_train.append(X_train.shape[0])
         learning_curve = []
@@ -363,14 +364,13 @@ class Test_fhe():
         self.test_spahm_global_results["learning_curve"] = learning_curve
         self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
         self.test_spahm_global_results["N_train"] = self.N_train
-        pdb.set_trace()
 
 
     def save_results(self):
         """
         Method to save this instance of the test class to pkl file
         """
-        with open("Test_fhe_results.pkl", "wb") as f:
+        with open(f"{self.outname}_results.pkl", "wb") as f:
             pickle.dump(self, f)
 
 
@@ -433,22 +433,23 @@ class OnDiskNetwork:
 if __name__ == "__main__":
 
     #Development Server
-    # 1) 
-    test_class = Test_fhe(Fhe_ridge)
-    test_class.spahm_global()
-    test_class.save_results()
+    # 1) Ridge
+    test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
+    test_class_ridge.spahm_global()
+    test_class_ridge.mbdf_global()
+    test_class_ridge.rep_len()
+    test_class_ridge.local_hydro_averaging()
+    test_class_ridge.save_results()
 
 
-    exit()
-    test_class_boost = Test_fhe_boost()
+    # 2) Boost
+    test_class_boost = Test_fhe(Fhe_boost, "boost")
     test_class_boost.spahm_global()
     test_class_boost.mbdf_global()
     test_class_boost.rep_len()
     test_class_boost.local_hydro_averaging()
     test_class_boost.save_results()
 
-
-    
     pdb.set_trace()
     #fhe_boost.quantize_model(N_max=100)
     print("Model trained and compiled.")
@@ -477,3 +478,5 @@ if __name__ == "__main__":
     print(os.listdir(network.client_dir.name))
     print(os.listdir(network.dev_dir.name))
     pdb.set_trace()
+
+    

@@ -9,7 +9,7 @@ import numpy as np
 import pickle
 from sklearn.model_selection import GridSearchCV, train_test_split
 import wget
-from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor
+from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge
 import random
 import MBDF
 import pdb
@@ -41,10 +41,10 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",Nmax=130831, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
+    def __init__(self, property = "H_atomization",Nmax=10000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
         self.Nmax = Nmax
-        self.rep_type = "spahm"
+        self.rep_type = rep_type
         self.bin_size = binsize
         self.avg_hydrogens = avg_hydrogens
 
@@ -63,6 +63,10 @@ class Data_preprocess:
         elements = qm9['elements']
         properties = np.array(qm9[self.property])
         N = len(qm9_inds)
+
+        if self.Nmax == "all":
+            self.Nmax = N
+
         inds = np.arange(N)
         np.random.shuffle(inds)
         qm9_inds = qm9_inds[inds]
@@ -141,7 +145,8 @@ class Data_preprocess:
         self.gen_rep()
         self.split_data()
         return self.X_train, self.X_test, self.y_train, self.y_test
-    
+
+
 
 class Fhe_boost:
     def __init__(self, X_train, y_train) -> None:
@@ -152,7 +157,7 @@ class Fhe_boost:
         n_folds = 5
         n_jobs = -1
         param_grid = {
-            "n_bits": [3, 4, 5, 6, 7],
+            "n_bits": [6, 7, 10],
             "max_depth": [5,6, 8, 10],
             "n_estimators": [10,15, 20, 25, 50],
         }
@@ -163,7 +168,7 @@ class Fhe_boost:
         else:
             grid_search_concrete.fit(self.X_train, self.y_train)
 
-        self.best_params_xgboost = grid_search_concrete.best_params_
+        self.reg_best_params = grid_search_concrete.best_params_
         self.concrete_reg = grid_search_concrete.best_estimator_
 
     def train(self, N_max,params):
@@ -190,9 +195,54 @@ class Fhe_boost:
     
 
 
-class Test_fhe_boost(Fhe_boost):
-    def __init__(self) -> None:
+class Fhe_ridge:
+    def __init__(self, X_train, y_train) -> None:
+        self.X_train = X_train
+        self.y_train = y_train
 
+    def cross_validation(self,N_max ):
+
+        n_folds = 5
+        n_jobs = -1
+        param_grid = {
+            "n_bits": [6, 7, 8, 10],
+            "alpha": [1e-3, 1e-2, 1e-1, 1],
+        }
+
+        grid_search_concrete = GridSearchCV(Ridge(), param_grid, cv=n_folds, n_jobs=n_jobs)
+        if N_max is not None:
+            grid_search_concrete.fit(self.X_train[:N_max], self.y_train[:N_max])
+        else:
+            grid_search_concrete.fit(self.X_train, self.y_train)
+
+        self.reg_best_params = grid_search_concrete.best_params_
+        self.concrete_reg = grid_search_concrete.best_estimator_
+
+    def train(self,N_max, params):
+        self.concrete_reg = Ridge(**params)
+        if N_max is not None:
+            self.concrete_reg.fit(self.X_train[:N_max], self.y_train[:N_max])
+        else:
+            self.concrete_reg.fit(self.X_train, self.y_train)
+    
+    def quantize_model(self, N_max):
+        if N_max is not None:
+            self.circuit = self.concrete_reg.compile(self.X_train[:N_max])
+        else:
+            self.circuit = self.concrete_reg.compile(self.X_train)
+        print(f"Generating a key for an {self.circuit.graph.maximum_integer_bit_width()}-bits circuit")
+        self.circuit.client.keygen(force=False)
+    
+    def predict(self, X_test, execute_in_fhe=True):
+        return self.concrete_reg.predict(X_test, execute_in_fhe=execute_in_fhe)
+    
+
+
+
+
+class Test_fhe():
+    def __init__(self, regressor) -> None:
+        self.regressor = regressor
         self.binsizes  = np.linspace(0.1, 3.0, 10)
         self.N_train = [2**i for i in range(5, 17)]
 
@@ -208,7 +258,7 @@ class Test_fhe_boost(Fhe_boost):
             X_train, X_test, y_train, y_test = Data_preprocess(binsize=b, avg_hydrogens=False).run()
             X_test, y_test = X_test[:10], y_test[:10]
             repshape = X_train.shape[1]
-            fhe_instance = Fhe_boost(X_train, y_train)
+            fhe_instance = self.regressor(X_train, y_train)
             fhe_instance.train(N_max=self.n_train_max, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
             fhe_instance.quantize_model(N_max=self.n_train_max)
 
@@ -255,7 +305,7 @@ class Test_fhe_boost(Fhe_boost):
             X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf", avg_hydrogens=h).run()
             
             learning_curve = []
-            fhe_instance = Fhe_boost(X_train, y_train)
+            fhe_instance = self.regressor(X_train, y_train)
             for n in self.N_train:
                 fhe_instance.cross_validation(N_max=n)
                 y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
@@ -282,12 +332,12 @@ class Test_fhe_boost(Fhe_boost):
         X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False).run()
         self.N_train.append(X_train.shape[0])
         learning_curve = []
-        fhe_instance = Fhe_boost(X_train, y_train)
+        fhe_instance = self.regressor(X_train, y_train)
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
             MAE = mae(y_test, y_pred_clear)
-            print(n,fhe_instance.best_params_xgboost, MAE)
+            print(n,fhe_instance.reg_best_params, MAE)
             learning_curve.append(MAE)
         
         self.test_mbdf_results["learning_curve"] = learning_curve
@@ -297,16 +347,16 @@ class Test_fhe_boost(Fhe_boost):
 
     def spahm_global(self):
         self.test_spahm_global_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(Nmax = "all",rep_type="spahm", avg_hydrogens=False).run()
         print(X_train.shape[1])
         self.N_train.append(X_train.shape[0])
         learning_curve = []
-        fhe_instance = Fhe_boost(X_train, y_train)
+        fhe_instance = self.regressor(X_train, y_train)
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, execute_in_fhe=False)
             MAE = mae(y_test, y_pred_clear)
-            print(n,fhe_instance.best_params_xgboost, MAE)
+            print(n,fhe_instance.reg_best_params, MAE)
             learning_curve.append(MAE)
 
         self.test_spahm_global_results["learning_curve"] = learning_curve
@@ -318,11 +368,8 @@ class Test_fhe_boost(Fhe_boost):
         """
         Method to save this instance of the test class to pkl file
         """
-        with open("Test_fhe_boost_results.pkl", "wb") as f:
+        with open("Test_fhe_results.pkl", "wb") as f:
             pickle.dump(self, f)
-
-
-            
 
 
 
@@ -385,15 +432,21 @@ if __name__ == "__main__":
 
     #Development Server
     # 1) 
-    test_class = Test_fhe_boost()
+    test_class = Test_fhe(Fhe_ridge)
     test_class.spahm_global()
-    test_class.mbdf_global()
-    test_class.rep_len()
-    test_class.local_hydro_averaging()
     test_class.save_results()
 
 
-    exit
+    exit()
+    test_class_boost = Test_fhe_boost()
+    test_class_boost.spahm_global()
+    test_class_boost.mbdf_global()
+    test_class_boost.rep_len()
+    test_class_boost.local_hydro_averaging()
+    test_class_boost.save_results()
+
+
+    
     pdb.set_trace()
     #fhe_boost.quantize_model(N_max=100)
     print("Model trained and compiled.")

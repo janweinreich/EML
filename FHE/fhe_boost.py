@@ -9,7 +9,7 @@ import numpy as np
 import pickle
 from sklearn.model_selection import GridSearchCV, train_test_split
 import wget
-from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge
+from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge #, KernelRidgeFHE
 import random
 import MBDF
 import pdb

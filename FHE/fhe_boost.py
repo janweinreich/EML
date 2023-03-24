@@ -260,7 +260,12 @@ class Test_fhe():
             X_test, y_test = X_test[:10], y_test[:10]
             repshape = X_train.shape[1]
             fhe_instance = self.regressor(X_train, y_train)
-            fhe_instance.train(N_max=self.n_train_max, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
+            if self.regressor == Fhe_boost:
+                fhe_instance.train(N_max=self.n_train_max, params = {"n_bits": 3, "max_depth": 4, "n_estimators": 10})
+            elif self.regressor == Fhe_ridge:
+                fhe_instance.train(N_max=self.n_train_max, params = {"n_bits": 3, "alpha": 1e-3})
+            else:
+                raise ValueError("Regressor not supported")
             fhe_instance.quantize_model(N_max=self.n_train_max)
 
             time_begin = time.time()

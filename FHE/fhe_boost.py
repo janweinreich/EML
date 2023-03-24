@@ -194,7 +194,6 @@ class Fhe_boost:
         return self.concrete_reg.predict(X_test, execute_in_fhe=execute_in_fhe)
     
 
-#
 class Fhe_ridge:
     def __init__(self, X_train, y_train) -> None:
         self.X_train = X_train

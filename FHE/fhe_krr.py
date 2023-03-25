@@ -3,6 +3,64 @@ import numpy as np
 import concrete.numpy as cnp
 from sklearn.model_selection import train_test_split
 
+
+
+
+
+
+class Fhe_krr_predictor:
+    def __init__(self, X_train, alphas, sigma, kernel_type) -> None:
+        self.X_train = X_train
+        self.alphas = alphas
+        self.sigma = sigma
+        self.kernel_type = kernel_type
+
+    
+    def gaussian_predict(X_train,alphas,sigma, X_test):
+        K = np.exp(-np.sum((X_test[:, None, :] - X_train[None, :, :]) ** 2, axis=-1) / sigma ** 2)
+        return K @ alphas
+    
+    
+    def laplacian_predict(X_train,alphas,sigma, X_test):
+        K = np.exp(-np.sum(np.abs(X_test[:, None, :] - X_train[None, :, :]), axis=-1) / sigma)
+        return K @ alphas
+    
+    def compile(self):
+        if self.kernel_type == "gaussian":
+            compiler = cnp.Compiler(self.gaussian_predict, {"X_train": "encrypted", "alphas": "encrypted", "sigma": "encrypted", "X_test": "encrypted"})
+        elif self.kernel_type == "laplacian":
+            compiler = cnp.Compiler(self.laplacian_predict, {"X_train": "encrypted", "alphas": "encrypted", "sigma": "encrypted", "X_test": "encrypted"})
+        else:
+            raise ValueError("kernel_type must be either gaussian or laplacian!")
+        
+        inputset = [self.X_train, self.alphas, self.sigma]
+        print(f"Compiling...")
+        self.circuit = compiler.compile(inputset)
+        print(f"Compilation done!")
+
+        print(f"Generating keys...")
+        self.circuit.keygen()
+
+
+    def predict(self, X_train, alphas, sigma, X_test, kernel_type):
+        self.compile()
+        if self.kernel_type == "gaussian":
+            return self.gaussian_predict(X_train,alphas,sigma, X_test)
+        elif self.kernel_type == "laplacian":
+            return self.laplacian_predict(X_train,alphas,sigma, X_test)
+        else:
+            raise ValueError("kernel_type must be either gaussian or laplacian!")
+
+    def execute(self):
+        examples = [(3, 4), (1, 2), (7, 7), (0, 0)]
+        for example in examples:
+            encrypted_example = self.circuit.encrypt(*example)
+            encrypted_result = self.circuit.run(encrypted_example)
+            result = self.circuit.decrypt(encrypted_result)
+            print(f"Evaluation of {' + '.join(map(str, example))} homomorphically = {result}")        
+
+
+
 X, y = load_breast_cancer(return_X_y=True)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -78,3 +136,22 @@ Traceback (most recent call last):
         <concrete.numpy.tracing.tracer.Tracer object at 0x7f10f63ecbe0>]],
       dtype=object) is not supported
 """
+
+    X_train, X_test, y_train, y_test = Data_preprocess(N_max = 5,rep_type="spahm", avg_hydrogens=False).run()
+    alphas = np.ones_like(y_train).reshape(-1,1)
+
+    sigma = 1
+    def gaussian_predict(X_train,alphas,sigma, X_test):
+        
+        K =  np.asarray([np.exp(-  np.dot( X_train[i]-X_test[j],X_train[i]-X_test[j])   /sigma**2) for i in range(X_train.shape[0]) for j in range(X_test.shape[0])])
+        K = K.reshape(X_train.shape[0],X_test.shape[0])
+        pdb.set_trace()
+        return np.dot(alphas, K)
+    
+    compiler = cnp.Compiler(gaussian_predict, {"X_train": "encrypted", "alphas": "encrypted", "sigma": "encrypted", "X_test": "encrypted"})
+    inputset = [(X_train, alphas,sigma, X_test)]
+    circuit = compiler.compile(inputset)
+    circuit.keygen()
+    encrypted_example = circuit.encrypt(*inputset)
+    encrypted_result = circuit.run(encrypted_example)
+    result = circuit.decrypt(encrypted_result)

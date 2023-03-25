@@ -42,7 +42,33 @@ result = circuit.decrypt(encrypted_result)
 
 
 """
-np.dot produced error
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "fhe_krr.py", line 39, in <module>
+    circuit = compiler.compile(inputset)
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/compilation/compiler.py", line 436, in compile
+    self._evaluate("Compiling", inputset)
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/compilation/compiler.py", line 277, in _evaluate
+    self._trace(first_sample)
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/compilation/compiler.py", line 206, in _trace
+    self.graph = Tracer.trace(self.function, parameters)
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/tracing/tracer.py", line 75, in trace
+    output_tracers: Any = function(**arguments)
+  File "fhe_krr.py", line 35, in gaussian_predict
+    return np.dot(K,alphas)
+  File "<__array_function__ internals>", line 180, in dot
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/tracing/tracer.py", line 447, in __array_function__
+    sanitized_args = [self.sanitize(arg) for arg in args]
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/tracing/tracer.py", line 447, in <listcomp>
+    sanitized_args = [self.sanitize(arg) for arg in args]
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/tracing/tracer.py", line 187, in sanitize
+    computation = Node.constant(value)
+  File "/home/jan/miniconda3/envs/fhe/lib/python3.8/site-packages/concrete/numpy/representation/node.py", line 59, in constant
+    raise ValueError(f"Constant {repr(constant)} is not supported") from error
+
+
 (Pdb) np.dot(K,alphas)
 *** ValueError: Constant array([[<concrete.numpy.tracing.tracer.Tracer object at 0x7f10f6600dc0>,
         <concrete.numpy.tracing.tracer.Tracer object at 0x7f10f6605df0>,

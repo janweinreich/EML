@@ -25,6 +25,8 @@ random.seed(42)
 
 
 
+
+
 def mol_to_xyz(els, coords, filename="curr.xyz"):
     #if not exist tmp dir create it
     if not os.path.exists("tmp"):
@@ -41,7 +43,7 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",N_max=10000, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
+    def __init__(self, property = "H_atomization",N_max=100, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
         self.N_max = N_max
         self.rep_type = rep_type
@@ -111,7 +113,7 @@ class Data_preprocess:
         elif self.rep_type == "spahm":
             print("Generating spahm representations...")
             X = []
-            for els, coord in tqdm(zip(self.elements, self.coords), total=len(self.coords)):
+            for els, coord in zip(self.elements, self.coords): #, total=len(self.coords)):
                 mol_name = mol_to_xyz(els, coord)
                 
                 mol = compound.xyz_to_mol(mol_name, 'def2svp', charge=0, spin=0)
@@ -147,6 +149,11 @@ class Data_preprocess:
         return self.X_train, self.X_test, self.y_train, self.y_test
 
 
+
+
+
+
+    
 
 class Fhe_boost:
     def __init__(self, X_train, y_train) -> None:
@@ -239,12 +246,16 @@ class Fhe_ridge:
 
 
 
+
+
 class Test_fhe():
     def __init__(self, regressor, outname) -> None:
         self.regressor = regressor
         self.binsizes  = np.linspace(0.1, 3.0, 10)
         self.N_train = [2**i for i in range(5, 17)]
         self.outname = outname
+
+
 
     
     def rep_len(self):
@@ -433,17 +444,33 @@ class OnDiskNetwork:
 
 
 
+
+
 # main
 if __name__ == "__main__":
 
+
+    test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
+    test_class_ridge.spahm_global()
+    test_class_ridge.mbdf_global()
+    test_class_ridge.save_results()
+
+
+    test_class_boost = Test_fhe(Fhe_boost, "boost")
+    test_class_boost.spahm_global()
+    test_class_boost.mbdf_global()
+    test_class_boost.save_results()
+
+
+    pdb.set_trace()
     #Development Server
     # 1) Ridge
-    test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
+    
     test_class_ridge.spahm_global()
     test_class_ridge.mbdf_global()
     test_class_ridge.rep_len()
     test_class_ridge.local_hydro_averaging()
-    test_class_ridge.save_results()
+    
 
 
     # 2) Boost

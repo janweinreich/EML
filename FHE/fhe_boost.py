@@ -43,7 +43,7 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class Data_preprocess:
 
-    def __init__(self, property = "H_atomization",N_max=100, binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
+    def __init__(self, property = "H_atomization",N_max="all", binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
         self.property = property
         self.N_max = N_max
         self.rep_type = rep_type
@@ -165,7 +165,7 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [6, 7, 10],
-            "max_depth": [5,6, 8, 10],
+            "max_depth": [5,6, 8, 10, 12],
             "n_estimators": [10,15, 20, 25, 50],
         }
 
@@ -211,7 +211,7 @@ class Fhe_ridge:
         n_folds = 5
         n_jobs = -1
         param_grid = {
-            "n_bits": [6, 7, 8, 10],
+            "n_bits": [6, 7, 8, 10, 12],
             "alpha": [1e-3, 1e-2, 1e-1, 1],
         }
 
@@ -451,14 +451,17 @@ if __name__ == "__main__":
 
 
     test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
-    test_class_ridge.spahm_global()
     test_class_ridge.mbdf_global()
+    test_class_ridge.local_hydro_averaging()
+    test_class_ridge.spahm_global()
+    
     test_class_ridge.save_results()
 
 
     test_class_boost = Test_fhe(Fhe_boost, "boost")
-    test_class_boost.spahm_global()
     test_class_boost.mbdf_global()
+    test_class_boost.local_hydro_averaging()
+    test_class_boost.spahm_global()
     test_class_boost.save_results()
 
 

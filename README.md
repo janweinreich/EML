@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/569219934.svg)](https://zenodo.org/badge/latestdoi/569219934)
+
 # EML
 Encrypted machine learning of molecular quantum properties
 

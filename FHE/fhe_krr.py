@@ -77,9 +77,28 @@ def gaussian_predict(X_train,alphas,sigma, X_test):
 
     y_predicted = np.array(y_predicted).flatten()
     #flatten because we need to return a 1d array of encrypted scalars to use cnp.array
-    y_predicted = cnp.array(y_predicted)
+    #y_predicted = cnp.array(y_predicted)
     return y_predicted
 
+
+
+def matmul_new(a, b):
+    prod_a_b = ((a-b)**2//4).astype(np.int64)
+    return prod_a_b
+
+
+#def mul_tlu(A, B):
+#    apbsq = ((A+B).astype(np.float64)**2 // 4).astype(np.int64)
+##    ambsq = ((A-B).astype(np.float64)**2 // 4).astype(np.int64)
+ #   return apbsq - ambsq
+
+
+A = np.random.randint(0, 100, size=(10, 10))
+B = np.random.randint(0, 100, size=(10, 10))
+
+
+#https://community.zama.ai/t/valueerror-when-compiling/499/8
+exit()
 compiler = cnp.Compiler(gaussian_predict, {"X_train": "encrypted", "alphas": "encrypted", "sigma": "encrypted", "X_test": "encrypted"})
 inputset = [(X_train, alphas,sigma, X_test)]
 circuit = compiler.compile(inputset)

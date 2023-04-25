@@ -46,7 +46,7 @@ def _(i):
 #distances should not be printed out in a real application
 
 j = 0
-@for_range(ntrain)
+@for_range_opt(ntrain)
 def _(i):
 
     NEG_XTEST = XTEST[j].__rmul__(-1)

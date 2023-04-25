@@ -1,0 +1,23 @@
+def gaussian_predict(X_train,alphas,sigma, X_test):
+    K = gaussian_matrix(X_train,sigma, X_test)
+    #make matrix multiplication with double loop not use np dot or cnp dot
+
+    n_rows = X_train.shape[0]
+    n_cols = X_test.shape[0]   
+    y_predicted = []
+    
+    for j in range(n_cols):
+        summe = cnp.zero()
+        for i in range(n_rows):
+
+            A = K[i][j]
+            B = alphas[i]
+            summe += (A*B).astype(np.int64)
+        
+        
+        y_predicted.append(summe)
+
+    y_predicted = np.array(y_predicted).flatten()
+    #flatten because we need to return a 1d array of encrypted scalars to use cnp.array
+    y_predicted = cnp.array(y_predicted)
+    return y_predicted

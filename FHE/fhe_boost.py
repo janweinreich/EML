@@ -165,7 +165,7 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [6, 7, 10],
-            "max_depth": [5,6, 8, 10, 12],
+            "max_depth": [5,6, 8, 10, 12, 13],
             "n_estimators": [10,15, 20, 25, 50],
         }
 
@@ -211,7 +211,7 @@ class Fhe_ridge:
         n_folds = 5
         n_jobs = -1
         param_grid = {
-            "n_bits": [6, 7, 8, 10, 12],
+            "n_bits": [6, 7, 8, 10, 12, 13],
             "alpha": [1e-3, 1e-2, 1e-1, 1],
         }
 
@@ -454,7 +454,6 @@ if __name__ == "__main__":
     test_class_ridge.mbdf_global()
     test_class_ridge.local_hydro_averaging()
     test_class_ridge.spahm_global()
-    
     test_class_ridge.save_results()
 
 

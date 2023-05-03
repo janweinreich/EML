@@ -9,12 +9,8 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 
 # Select a subset of the data to make things faster
 X_train = X_train[:10]
-y_train = y_train[:10]
-X_test = X_test[:10]
-y_test = y_test[:10]
-
-
-
+ 
+ 
 sigma = 1
 alphas = np.ones_like(y_train,dtype=np.int64).reshape(-1,1)
 alphas = alphas.flatten()

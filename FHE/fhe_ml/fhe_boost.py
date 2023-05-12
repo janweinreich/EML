@@ -19,12 +19,27 @@ from shutil import copyfile
 from tqdm import tqdm
 from qstack import compound, spahm
 from sklearn.metrics import mean_absolute_error as mae
+import socket
+import threading
+from shutil import copyfile
+from tempfile import TemporaryDirectory
+import pickle
+import matplotlib.pyplot as plt
 
 np.random.seed(42)
 random.seed(42)
 
 
+def dump_to_file(obj, file_path):
+    """Dump a Python object to a file using pickle."""
+    with open(file_path, 'wb') as f:
+        pickle.dump(obj, f)
 
+def load_from_file(file_path):
+    """Load a Python object from a file using pickle."""
+    with open(file_path, 'rb') as f:
+        obj = pickle.load(f)
+    return obj
 
 def mol_to_xyz(els, coords, filename="curr.xyz"):
     #if not exist tmp dir create it
@@ -55,7 +70,6 @@ class Data_preprocess:
             qm9 = np.load("qm9_data.npz", allow_pickle=True)
         else:
             url = 'https://ndownloader.figshare.com/files/28893843'
-            filename = wget.download(url)
             qm9 = np.load("qm9_data.npz", allow_pickle=True)
 
         qm9_inds = qm9["index"]
@@ -93,7 +107,10 @@ class Data_preprocess:
     def gen_rep(self):
         
         if "mbdf" in self.rep_type:
+
             mbdf = MBDF.generate_mbdf(self.nuclear_charges,self.coords, n_jobs=-1) #,normalized = True) #, progress=False)
+            #pdb.set_trace()
+
             
             if self.rep_type=="local_mbdf":
                 if self.avg_hydrogens:
@@ -105,21 +122,35 @@ class Data_preprocess:
                     self.X = self.pad_max_size(X)
                 else:
                     self.X =  np.array([x.flatten() for x in mbdf])
-            
+            #TODO: sum over mbdf over 1st axis instead of flattening!!!
             elif self.rep_type == "local_mbdf_order":
                 row_norms = np.linalg.norm(mbdf, axis=2)
                 sorted_indices = np.argsort(-row_norms)
                 sorted_mbdf = np.take_along_axis(mbdf, sorted_indices[:, :, np.newaxis], axis=1)
+                
                 self.X = np.array([x.flatten() for x in sorted_mbdf])
+
+            elif self.rep_type == "local_2_global_mbdf":
+                row_norms = np.linalg.norm(mbdf, axis=2)
+                sorted_indices = np.argsort(-row_norms)
+                sorted_mbdf = np.take_along_axis(mbdf, sorted_indices[:, :, np.newaxis], axis=1)
+                #pdb.set_trace()
+                self.X = np.concatenate([np.sum(sorted_mbdf, axis=2),np.mean(sorted_mbdf, axis=2), np.var(sorted_mbdf, axis=2)], axis=1)
+                #np.sum(sorted_mbdf, axis=2)
 
 
             elif self.rep_type == "global_mbdf":
                 self.X = MBDF.generate_df(mbdf,self.nuclear_charges,  binsize=self.bin_size)
 
-
+            # todo bagging mbdf? slighlty better than BoB but not as good as global mbdf, after creating bags pad with zeros to max size of bags and then order within bags by norm
+            # global mbdf is best and is contant size for all molecules (no padding needed)
+            # Molecular feature based representation, histogram of elements, partial charges, etc
+            # try lasso regression 
         
         elif self.rep_type == "spahm":
             print("Generating spahm representations...")
+            
+            
             X = []
             for els, coord in zip(self.elements, self.coords): #, total=len(self.coords)):
                 mol_name = mol_to_xyz(els, coord)
@@ -127,11 +158,12 @@ class Data_preprocess:
                 mol = compound.xyz_to_mol(mol_name, 'def2svp', charge=0, spin=0)
                 os.remove(mol_name)
                 X.append(spahm.compute_spahm.get_spahm_representation(mol, "lb")[0])
-                #pdb.set_trace()
-
-            self.X = np.array(X)
+            
+            self.X = X
             self.X = self.pad_max_size(self.X)
-
+            self.X = np.array(self.X)
+            
+            
         else:
             raise ValueError("rep_type must be either local_mbdf, global_mbdf or spahm!")
 
@@ -159,10 +191,6 @@ class Data_preprocess:
 
 
 
-
-
-    
-
 class Fhe_boost:
     def __init__(self, X_train, y_train) -> None:
         self.X_train = X_train
@@ -173,7 +201,7 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [6, 7, 10],
-            "max_depth": [5,6, 8, 10, 12, 13],
+            "max_depth": [5,6, 8, 10, 12, 13, 14],
             "n_estimators": [10,15, 20, 25, 50],
         }
 
@@ -223,10 +251,11 @@ class Fhe_ridge:
 
         n_folds = 5
         n_jobs = -1
-        param_grid = {
-            "n_bits": [12, 13, 15] ,
-            "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3],
-        } #, 16, 18],
+        #param_grid = {
+        #    "n_bits": [12, 13, 15, 16, 18],
+        #    "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3], with these parameters we get a compilation error
+        #}
+        param_grid = { "n_bits": [13], "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]}
 
         grid_search_concrete = GridSearchCV(Ridge(), param_grid, cv=n_folds, n_jobs=n_jobs)
         if N_max is not None:
@@ -238,7 +267,7 @@ class Fhe_ridge:
         print(self.reg_best_params)
         self.concrete_reg = grid_search_concrete.best_estimator_
         #pdb.set_trace()
-        self.concrete_reg.compile(self.X_train[:10])
+        self.concrete_reg.compile(self.X_train)
 
     def train(self,N_max, params):
         self.concrete_reg = Ridge(**params)
@@ -365,7 +394,7 @@ class Test_fhe():
     def local_order(self):
         #Test model with mbdf and without
         self.test_local_order_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf_order", avg_hydrogens=False, N_max=3000).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf_order", avg_hydrogens=False, N_max=2000).run()
         learning_curve = []
         fhe_instance = self.regressor(X_train, y_train)
         for n in self.N_train:
@@ -380,31 +409,58 @@ class Test_fhe():
         self.test_local_order_results["N_train"] = self.N_train
 
 
-
-    def mbdf_global(self):
-        binsize = 0.05
-        #Test model with mbdf and without
-        self.test_mbdf_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False, N_max=3000).run()
-        #self.N_train.append(X_train.shape[0])
+    def local_global(self):
+        self.test_local_order_results = {}
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_2_global_mbdf", avg_hydrogens=False, N_max=2000).run()
         learning_curve = []
         fhe_instance = self.regressor(X_train, y_train)
-        #pdb.set_trace()
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, fhe=False)
             MAE = mae(y_test, y_pred_clear)
-            print(n,fhe_instance.reg_best_params, MAE)
+            print(n, MAE)
+            learning_curve.append(MAE)
+        
+        self.test_local_order_results["learning_curve"] = learning_curve
+        self.test_local_order_results["rep_shape"] = X_train.shape[1]
+        self.test_local_order_results["N_train"] = self.N_train
+
+        return fhe_instance, self.N_train, learning_curve
+
+
+    def mbdf_global(self, fhe=False):
+        binsize = 0.05
+        #Test model with mbdf and without
+        self.test_mbdf_results = {}
+        self.X_train, self.X_test, self.y_train, self.y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False, N_max=2000).run()
+        #self.N_train.append(X_train.shape[0])
+        learning_curve = []
+        fhe_instance = self.regressor(self.X_train, self.y_train)
+        #pdb.set_trace()
+        for n in self.N_train:
+            fhe_instance.cross_validation(N_max=n)
+            y_pred_clear = fhe_instance.predict(self.X_test, fhe=False)
+            MAE = mae(self.y_test, y_pred_clear)
+            if fhe:
+                y_pred_fhe = fhe_instance.predict(self.X_test, fhe=True)
+                MAE_fhe = mae(self.y_test, y_pred_fhe)
+            
+                print(n,fhe_instance.reg_best_params, MAE, MAE_fhe)
+            else:
+                print(n,fhe_instance.reg_best_params, MAE)
             learning_curve.append(MAE)
         
         self.test_mbdf_results["learning_curve"] = learning_curve
-        self.test_mbdf_results["rep_shape"] = X_train.shape[1]
+        self.test_mbdf_results["rep_shape"] = self.X_train.shape[1]
         self.test_mbdf_results["binsize"] = binsize
         self.test_mbdf_results["N_train"] = self.N_train
 
+        return fhe_instance, self.N_train, learning_curve
+
+
     def spahm_global(self):
         self.test_spahm_global_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False,N_max=3000).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False,N_max=2000).run()
         print(X_train.shape[1])
         self.N_train.append(X_train.shape[0])
         learning_curve = []
@@ -420,6 +476,8 @@ class Test_fhe():
         self.test_spahm_global_results["learning_curve"] = learning_curve
         self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
         self.test_spahm_global_results["N_train"] = self.N_train
+
+        return fhe_instance, self.N_train, learning_curve
 
 
     def save_results(self):
@@ -471,10 +529,7 @@ class OnDiskNetwork:
     def dev_send_clientspecs_and_modelspecs_to_client(self):
         """Send the clientspecs and evaluation key to the client."""
         copyfile(self.dev_dir.name + "/client.zip", self.client_dir.name + "/client.zip")
-        copyfile(
-            self.dev_dir.name + "/serialized_processing.json",
-            self.client_dir.name + "/serialized_processing.json",
-        )
+
 
     def cleanup(self):
         """Clean up the temporary folders."""
@@ -482,6 +537,96 @@ class OnDiskNetwork:
         self.client_dir.cleanup()
         self.dev_dir.cleanup()
 
+
+class OnlineNetwork:
+    """Simulate a network on a local network."""
+
+    def __init__(self, host="127.0.0.1", port=12345):
+        self.host = host
+        self.port = port
+        self.server_dir = TemporaryDirectory()
+        self.client_dir = TemporaryDirectory()
+        self.dev_dir    = TemporaryDirectory()
+
+
+    def start_server(self):
+        # Initialize the server socket
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # Bind the server socket to the specified host and port
+        self.server_socket.bind((self.host, self.port))
+
+        # Start listening for incoming connections
+        self.server_socket.listen()
+
+        # Server loop to handle connections
+        while True:
+            # Accept an incoming connection
+            client_socket, client_address = self.server_socket.accept()
+
+            # Implement your server logic here, such as receiving and processing data
+            # ...
+
+            # Close the client socket after processing the data
+            client_socket.close()
+
+            # You can break the loop when you want to stop the server, e.g., after handling a certain number of requests
+            break
+
+        # Close the server socket
+        self.server_socket.close()
+
+
+    def _send_data(self, data, recipient):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((self.host, self.port))
+            s.sendall(data)
+            s.sendall(bytes(f"END-{recipient}", "utf-8"))
+
+    def _receive_data(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((self.host, self.port))
+            s.listen()
+            conn, _ = s.accept()
+            with conn:
+                received_data = b""
+                while True:
+                    data = conn.recv(1024)
+                    if not data:
+                        break
+                    received_data += data
+                return received_data
+
+    def client_send_evaluation_key_to_server(self, serialized_evaluation_keys):
+        """Send the public key to the server."""
+        self._send_data(serialized_evaluation_keys, "server")
+
+    def client_send_input_to_server_for_prediction(self, encrypted_input):
+        """Send the input to the server and execute on the server in FHE."""
+        self._send_data(encrypted_input, "server")
+        return self._receive_data()
+
+    def dev_send_model_to_server(self):
+        """Send the model to the server."""
+        with open(self.dev_dir.name + "/server.zip", "rb") as f:
+            model_data = f.read()
+        self._send_data(model_data, "server")
+
+    def server_send_encrypted_prediction_to_client(self, encrypted_prediction):
+        """Send the encrypted prediction to the client."""
+        self._send_data(encrypted_prediction, "client")
+
+    def dev_send_clientspecs_and_modelspecs_to_client(self):
+        """Send the clientspecs and evaluation key to the client."""
+        with open(self.dev_dir.name + "/client.zip", "rb") as f:
+            client_data = f.read()
+        self._send_data(client_data, "client")
+
+    def cleanup(self):
+        """Clean up the temporary folders."""
+        self.server_dir.cleanup()
+        self.client_dir.cleanup()
+        self.dev_dir.cleanup()
 
 
 
@@ -494,14 +639,43 @@ if __name__ == "__main__":
     if do_ridge:
         test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
         print("Ridge")
-        print("MBDF global")
-        test_class_ridge.mbdf_global()
+        print("SPAHM global")
+        _, Ntrain,spahm_error =  test_class_ridge.spahm_global()
+
+
         print("Local order")
-        test_class_ridge.local_order()
+        _,Ntrain, local_error =  test_class_ridge.local_global()
+
+
+        print("MBDF global")
+        fhe_instance, Ntrain, global_error =  test_class_ridge.mbdf_global(fhe=False)
+
+        #plot the learning curves
+        fig, ax = plt.subplots(figsize=(6, 8))
+        ax.plot(Ntrain, spahm_error, label="SPAHM")
+        ax.plot(Ntrain, local_error, label="Local MBDF")
+        ax.plot(Ntrain, global_error, label="Global MBDF")
+        ax.set_xlabel(r"$N$", fontsize=25)
+        ax.set_ylabel(r"MAE (ha)", fontsize=25)
+        ax.set_yscale("log")
+        ax.set_xscale("log")
+        ax.legend(fontsize=20)
+
+        fig.savefig("./tmp/learning_curves.pdf", bbox_inches="tight")
+
 
         exit()
 
-        
+        #dump_to_file(fhe_instance, "./tmp/fhe_instance")
+        #dump_to_file(test_class_ridge, "./tmp/test_class_ridge")
+
+
+        #pdb.set_trace()
+        """
+        test_class_ridge.save_results()
+        print("Local order")
+        test_class_ridge.local_order()
+
         print("Local order")
         test_class_ridge.local_order()
         
@@ -511,6 +685,7 @@ if __name__ == "__main__":
         print("SPAHM global")
         test_class_ridge.spahm_global()
         test_class_ridge.save_results()
+        """
 
     if do_boost:
         print("Boost")
@@ -524,35 +699,88 @@ if __name__ == "__main__":
         test_class_boost.save_results()
 
 
-    pdb.set_trace()
+    
 
 
     #fhe_boost.quantize_model(N_max=100)
     print("Model trained and compiled.")
 
-    # Let's instantiate the network
-    network = OnDiskNetwork()
-    fhemodel_dev = FHEModelDev(network.dev_dir.name, Fhe_boost.concrete_reg)
-    fhemodel_dev.save()
-    print(os.listdir(network.dev_dir.name))
-    network.dev_send_model_to_server()
-    # Let's send the clientspecs and evaluation key to the client
-    network.dev_send_clientspecs_and_modelspecs_to_client()
-    #y_pred = fhe_boost.predict(X_test, execute_in_fhe=True)
-    
-    # Let's create the client and load the model
-    fhemodel_client = FHEModelClient(network.client_dir.name, key_dir=network.client_dir.name)
+    local_net, online_net = False, True
 
-    # The client first need to create the private and evaluation keys.
-    fhemodel_client.generate_private_and_evaluation_keys()
-    # Get the serialized evaluation keys
-    serialized_evaluation_keys = fhemodel_client.get_serialized_evaluation_keys()
-    print(f"Evaluation keys size: {sys.getsizeof(serialized_evaluation_keys) / 1024 / 1024:.2f} MB")
-    # Let's send this evaluation key to the server (this has to be done only once)
-    network.client_send_evaluation_key_to_server(serialized_evaluation_keys)
-    print(os.listdir(network.server_dir.name))
-    print(os.listdir(network.client_dir.name))
-    print(os.listdir(network.dev_dir.name))
-    pdb.set_trace()
 
+
+
+    model_dev  = fhe_instance.concrete_reg
     
+    if local_net:
+        network = OnDiskNetwork()
+        fhemodel_dev = FHEModelDev(network.dev_dir.name, model_dev)
+        fhemodel_dev.save()
+        print(os.listdir(network.dev_dir.name))
+        network.dev_send_model_to_server()
+        # Let's send the clientspecs and evaluation key to the client
+        
+        network.dev_send_clientspecs_and_modelspecs_to_client()
+        #y_pred = fhe_boost.predict(X_test, execute_in_fhe=True)
+        
+        # Let's create the client and load the model
+        fhemodel_client = FHEModelClient(network.client_dir.name, key_dir=network.client_dir.name)
+
+        # The client first need to create the private and evaluation keys.
+        fhemodel_client.generate_private_and_evaluation_keys()
+        # Get the serialized evaluation keys
+        serialized_evaluation_keys = fhemodel_client.get_serialized_evaluation_keys()
+        print(f"Evaluation keys size: {sys.getsizeof(serialized_evaluation_keys) / 1024 / 1024:.2f} MB")
+        # Let's send this evaluation key to the server (this has to be done only once)
+        network.client_send_evaluation_key_to_server(serialized_evaluation_keys)
+        print(os.listdir(network.server_dir.name))
+        print(os.listdir(network.client_dir.name))
+        print(os.listdir(network.dev_dir.name))
+        
+
+
+        # Now we have everything for the client to interact with the server
+        X_client = test_class_ridge.X_test[:10]
+        # We create a loop to send the input to the server and receive the encrypted prediction
+        decrypted_predictions = []
+        execution_time = []
+        for i in tqdm(range(X_client.shape[0])):
+            clear_input = X_client[[i], :]
+            encrypted_input = fhemodel_client.quantize_encrypt_serialize(clear_input)
+            execution_time += [network.client_send_input_to_server_for_prediction(encrypted_input)]
+            encrypted_prediction = network.server_send_encrypted_prediction_to_client()
+            decrypted_prediction = fhemodel_client.deserialize_decrypt_dequantize(encrypted_prediction)[0]
+            decrypted_predictions.append(decrypted_prediction)
+
+        # Check MB size with sys of the encrypted data vs clear data
+        print(
+            f"Encrypted data is "
+            f"{len(encrypted_input)/clear_input.nbytes:.2f}"
+            " times larger than the clear data"
+        )
+
+        # Show execution time
+        print(f"The average execution time is {np.mean(execution_time):.2f} seconds per sample.")
+        
+        
+        clear_prediction = model_dev.predict(X_client)
+        decrypted_predictions = np.array(decrypted_predictions)
+        deviation = mae(clear_prediction, decrypted_predictions)
+        print(f"Deviation between FHE prediction and clear model is: {deviation}")
+
+    else:
+        network = OnlineNetwork()
+        fhemodel_dev = FHEModelDev(network.dev_dir.name, model_dev)
+        fhemodel_dev.save()
+        print(os.listdir(network.server_dir.name))
+
+        pdb.set_trace()
+        server_thread = threading.Thread(target=network.start_server)
+        server_thread.start()
+        network.dev_send_model_to_server()
+
+
+
+
+        
+        server_thread.join()

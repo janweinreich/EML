@@ -9,9 +9,10 @@ import numpy as np
 import pickle
 from sklearn.model_selection import GridSearchCV, train_test_split
 import wget
-from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge #, KernelRidgeFHE
+from concrete.ml.sklearn import XGBRegressor as ConcreteXGBRegressor, Ridge, Lasso
 import random
 import MBDF
+
 import pdb
 from tempfile import TemporaryDirectory
 from concrete.ml.deployment import FHEModelClient, FHEModelDev, FHEModelServer
@@ -55,6 +56,26 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
     f.close()
     return path_to_temp_xyz
 
+
+
+def max_element_counts(elements):
+    # Initialize an empty dictionary to store the maximum counts
+    max_counts = {}
+
+    # Iterate over each sub-array in the main array
+    for sub_array in elements:
+        # Count the occurrences of each element in the sub-array
+        unique, counts = np.unique(sub_array, return_counts=True)
+        count_dict = dict(zip(unique, counts))
+
+        # Compare the counts with the current maximum counts
+        for element, count in count_dict.items():
+            if element not in max_counts or count > max_counts[element]:
+                max_counts[element] = count
+
+    return max_counts
+
+
 class Data_preprocess:
 
     def __init__(self, property = "H_atomization",N_max="all", binsize=3.0,rep_type="spahm", avg_hydrogens=False) -> None:
@@ -94,6 +115,9 @@ class Data_preprocess:
         self.nuclear_charges = nuclear_charges[:self.N_max]
         self.elements = elements[:self.N_max]
         self.properties = properties[:self.N_max]
+
+        
+
 
     def reduce_hydrogens(self,q,x):
         
@@ -146,6 +170,8 @@ class Data_preprocess:
             # global mbdf is best and is contant size for all molecules (no padding needed)
             # Molecular feature based representation, histogram of elements, partial charges, etc
             # try lasso regression 
+
+
         
         elif self.rep_type == "spahm":
             print("Generating spahm representations...")
@@ -162,10 +188,17 @@ class Data_preprocess:
             self.X = X
             self.X = self.pad_max_size(self.X)
             self.X = np.array(self.X)
+
+        elif self.rep_type == "BoB":
+            self.X = MBDF.generate_bob(self.elements,self.coords, asize=max_element_counts(self.elements))
             
-            
+        elif self.rep_type == "MBDF_bagged":
+            import MBDF_BAGGED
+            self.X = MBDF_BAGGED.generate_mbdf_bagged(self.nuclear_charges,self.coords,asize = max_element_counts(self.elements))
+
+
         else:
-            raise ValueError("rep_type must be either local_mbdf, global_mbdf or spahm!")
+            raise ValueError("rep_type must be either local_mbdf,BoB, global_mbdf or spahm!")
 
 
     def pad_max_size(self, X):
@@ -201,7 +234,7 @@ class Fhe_boost:
         n_jobs = -1
         param_grid = {
             "n_bits": [6, 7, 10],
-            "max_depth": [5,6, 8, 10, 12, 13, 14],
+            "max_depth": [5,6, 8, 10, 12, 13],
             "n_estimators": [10,15, 20, 25, 50],
         }
 
@@ -243,9 +276,13 @@ class Fhe_boost:
     
 
 class Fhe_ridge:
-    def __init__(self, X_train, y_train) -> None:
+    def __init__(self, X_train, y_train, clear_model="Ridge") -> None:
         self.X_train = X_train
         self.y_train = y_train
+        if clear_model == "Ridge":
+            self.clear_model = Ridge
+        elif clear_model == "Lasso":
+            self.clear_model = Lasso
 
     def cross_validation(self,N_max ):
 
@@ -255,9 +292,9 @@ class Fhe_ridge:
         #    "n_bits": [12, 13, 15, 16, 18],
         #    "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3], with these parameters we get a compilation error
         #}
-        param_grid = { "n_bits": [13], "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]}
+        param_grid = { "n_bits": [11,12], "alpha": [1e-8,1e-7, 1e-6,1e-5,1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100]}
 
-        grid_search_concrete = GridSearchCV(Ridge(), param_grid, cv=n_folds, n_jobs=n_jobs)
+        grid_search_concrete = GridSearchCV(self.clear_model(), param_grid, cv=n_folds, n_jobs=n_jobs)
         if N_max is not None:
             grid_search_concrete.fit(self.X_train[:N_max], self.y_train[:N_max])
         else:
@@ -270,7 +307,7 @@ class Fhe_ridge:
         self.concrete_reg.compile(self.X_train)
 
     def train(self,N_max, params):
-        self.concrete_reg = Ridge(**params)
+        self.concrete_reg = self.clear_model(**params)
         if N_max is not None:
             self.concrete_reg.fit(self.X_train[:N_max], self.y_train[:N_max])
         else:
@@ -293,16 +330,10 @@ class Fhe_ridge:
 
     
 
-
-
-
-
-
 class Test_fhe():
     def __init__(self, regressor, outname) -> None:
         self.regressor = regressor
         self.binsizes  = np.linspace(0.1, 3.0, 10)
-        self.N_train = [2**i for i in range(5, 12)] #17
         self.outname = outname
 
 
@@ -369,7 +400,7 @@ class Test_fhe():
         for h in hydros:
 
             X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf", avg_hydrogens=h, N_max=3000).run()
-            
+            print("Rep dim", X_train[0].shape)
             learning_curve = []
             fhe_instance = self.regressor(X_train, y_train)
             for n in self.N_train:
@@ -391,12 +422,18 @@ class Test_fhe():
 
         self.test_hydro_averaging_results["N_train"] = self.N_train
 
-    def local_order(self):
+    def local_order(self, clear_model="Ridge"):
         #Test model with mbdf and without
         self.test_local_order_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf_order", avg_hydrogens=False, N_max=2000).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_mbdf_order", avg_hydrogens=False, N_max=1500).run()
+        print("Rep dim", X_train[0].shape)
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
+
         learning_curve = []
-        fhe_instance = self.regressor(X_train, y_train)
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, fhe=False)
@@ -409,11 +446,16 @@ class Test_fhe():
         self.test_local_order_results["N_train"] = self.N_train
 
 
-    def local_global(self):
+    def local_global(self, clear_model="Ridge"):
         self.test_local_order_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_2_global_mbdf", avg_hydrogens=False, N_max=2000).run()
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="local_2_global_mbdf", avg_hydrogens=False, N_max=1500).run()
+        print("Rep dim", X_train[0].shape)
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
         learning_curve = []
-        fhe_instance = self.regressor(X_train, y_train)
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
             y_pred_clear = fhe_instance.predict(X_test, fhe=False)
@@ -425,25 +467,86 @@ class Test_fhe():
         self.test_local_order_results["rep_shape"] = X_train.shape[1]
         self.test_local_order_results["N_train"] = self.N_train
 
-        return fhe_instance, self.N_train, learning_curve
+
+        return fhe_instance, self.N_train, learning_curve, len(X_train[0])
 
 
-    def mbdf_global(self, fhe=False):
+
+    def BoB_global(self, fhe=False, clear_model="Ridge"):
+        self.test_BoB_global = {}
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="BoB", avg_hydrogens=False, N_max=1500).run()
+        print("Rep dim", X_train[0].shape)
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
+        learning_curve = []
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
+        for n in self.N_train:
+            fhe_instance.cross_validation(N_max=n)
+            y_pred_clear = fhe_instance.predict(X_test, fhe=False)
+            MAE = mae(y_test, y_pred_clear)
+            if fhe:
+                y_pred_fhe = fhe_instance.predict(X_test, fhe=True)
+                MAE_fhe = mae(y_test, y_pred_fhe)
+            
+                print(n,fhe_instance.reg_best_params, MAE, MAE_fhe)
+            else:
+                print(n,fhe_instance.reg_best_params, MAE)
+            learning_curve.append(MAE)
+        
+        return fhe_instance, self.N_train, learning_curve, len(X_train[0])
+
+        
+
+    def MBDF_bagged_rep(self, fhe=False, clear_model="Ridge"):
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="MBDF_bagged", avg_hydrogens=False, N_max=1500).run()
+        print("Rep dim", len(X_train[0]))
+        #pdb.set_trace()
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
+        learning_curve = []
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
+        for n in self.N_train:
+            fhe_instance.cross_validation(N_max=n)
+            y_pred_clear = fhe_instance.predict(X_test, fhe=False)
+            MAE = mae(y_test, y_pred_clear)
+            if fhe:
+                y_pred_fhe = fhe_instance.predict(X_test, fhe=True)
+                MAE_fhe = mae(y_test, y_pred_fhe)
+            
+                print(n,fhe_instance.reg_best_params, MAE, MAE_fhe)
+            else:
+                print(n,fhe_instance.reg_best_params, MAE)
+            learning_curve.append(MAE)
+        
+        return fhe_instance, self.N_train, learning_curve, len(X_train[0])
+
+
+
+
+    def mbdf_global(self, fhe=False, clear_model="Ridge"):
         binsize = 0.05
         #Test model with mbdf and without
         self.test_mbdf_results = {}
-        self.X_train, self.X_test, self.y_train, self.y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False, N_max=2000).run()
-        #self.N_train.append(X_train.shape[0])
+        X_train, X_test, y_train, y_test = Data_preprocess(binsize=binsize, rep_type="global_mbdf", avg_hydrogens=False, N_max=1500).run()
+        print("Rep dim", X_train[0].shape)
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
         learning_curve = []
-        fhe_instance = self.regressor(self.X_train, self.y_train)
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
         #pdb.set_trace()
         for n in self.N_train:
             fhe_instance.cross_validation(N_max=n)
-            y_pred_clear = fhe_instance.predict(self.X_test, fhe=False)
-            MAE = mae(self.y_test, y_pred_clear)
+            y_pred_clear = fhe_instance.predict(X_test, fhe=False)
+            MAE = mae(y_test, y_pred_clear)
             if fhe:
-                y_pred_fhe = fhe_instance.predict(self.X_test, fhe=True)
-                MAE_fhe = mae(self.y_test, y_pred_fhe)
+                y_pred_fhe = fhe_instance.predict(X_test, fhe=True)
+                MAE_fhe = mae(y_test, y_pred_fhe)
             
                 print(n,fhe_instance.reg_best_params, MAE, MAE_fhe)
             else:
@@ -451,20 +554,25 @@ class Test_fhe():
             learning_curve.append(MAE)
         
         self.test_mbdf_results["learning_curve"] = learning_curve
-        self.test_mbdf_results["rep_shape"] = self.X_train.shape[1]
+        self.test_mbdf_results["rep_shape"] = X_train.shape[1]
         self.test_mbdf_results["binsize"] = binsize
         self.test_mbdf_results["N_train"] = self.N_train
 
-        return fhe_instance, self.N_train, learning_curve
+        return fhe_instance, self.N_train, learning_curve, len(X_train[0])
 
 
-    def spahm_global(self):
+    def spahm_global(self, clear_model="Ridge"):
         self.test_spahm_global_results = {}
-        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False,N_max=2000).run()
-        print(X_train.shape[1])
-        self.N_train.append(X_train.shape[0])
+        X_train, X_test, y_train, y_test = Data_preprocess(rep_type="spahm", avg_hydrogens=False,N_max=1500).run()
+        print("Rep dim", X_train[0].shape)
+        n_max = X_train.shape[0]
+        max_power = int(np.log2(n_max)) 
+        curve = np.logspace(5, max_power, max_power-1, base=2, dtype=int)
+        self.N_train =  np.append(curve, n_max)
+        
+        
         learning_curve = []
-        fhe_instance = self.regressor(X_train, y_train)
+        fhe_instance = self.regressor(X_train, y_train, clear_model)
         for n in self.N_train:
             #pdb.set_trace()
             fhe_instance.cross_validation(N_max=n)
@@ -477,7 +585,7 @@ class Test_fhe():
         self.test_spahm_global_results["rep_shape"] = X_train.shape[1]
         self.test_spahm_global_results["N_train"] = self.N_train
 
-        return fhe_instance, self.N_train, learning_curve
+        return fhe_instance, self.N_train, learning_curve, len(X_train[0])
 
 
     def save_results(self):
@@ -538,98 +646,6 @@ class OnDiskNetwork:
         self.dev_dir.cleanup()
 
 
-class OnlineNetwork:
-    """Simulate a network on a local network."""
-
-    def __init__(self, host="127.0.0.1", port=12345):
-        self.host = host
-        self.port = port
-        self.server_dir = TemporaryDirectory()
-        self.client_dir = TemporaryDirectory()
-        self.dev_dir    = TemporaryDirectory()
-
-
-    def start_server(self):
-        # Initialize the server socket
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        # Bind the server socket to the specified host and port
-        self.server_socket.bind((self.host, self.port))
-
-        # Start listening for incoming connections
-        self.server_socket.listen()
-
-        # Server loop to handle connections
-        while True:
-            # Accept an incoming connection
-            client_socket, client_address = self.server_socket.accept()
-
-            # Implement your server logic here, such as receiving and processing data
-            # ...
-
-            # Close the client socket after processing the data
-            client_socket.close()
-
-            # You can break the loop when you want to stop the server, e.g., after handling a certain number of requests
-            break
-
-        # Close the server socket
-        self.server_socket.close()
-
-
-    def _send_data(self, data, recipient):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((self.host, self.port))
-            s.sendall(data)
-            s.sendall(bytes(f"END-{recipient}", "utf-8"))
-
-    def _receive_data(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.port))
-            s.listen()
-            conn, _ = s.accept()
-            with conn:
-                received_data = b""
-                while True:
-                    data = conn.recv(1024)
-                    if not data:
-                        break
-                    received_data += data
-                return received_data
-
-    def client_send_evaluation_key_to_server(self, serialized_evaluation_keys):
-        """Send the public key to the server."""
-        self._send_data(serialized_evaluation_keys, "server")
-
-    def client_send_input_to_server_for_prediction(self, encrypted_input):
-        """Send the input to the server and execute on the server in FHE."""
-        self._send_data(encrypted_input, "server")
-        return self._receive_data()
-
-    def dev_send_model_to_server(self):
-        """Send the model to the server."""
-        with open(self.dev_dir.name + "/server.zip", "rb") as f:
-            model_data = f.read()
-        self._send_data(model_data, "server")
-
-    def server_send_encrypted_prediction_to_client(self, encrypted_prediction):
-        """Send the encrypted prediction to the client."""
-        self._send_data(encrypted_prediction, "client")
-
-    def dev_send_clientspecs_and_modelspecs_to_client(self):
-        """Send the clientspecs and evaluation key to the client."""
-        with open(self.dev_dir.name + "/client.zip", "rb") as f:
-            client_data = f.read()
-        self._send_data(client_data, "client")
-
-    def cleanup(self):
-        """Clean up the temporary folders."""
-        self.server_dir.cleanup()
-        self.client_dir.cleanup()
-        self.dev_dir.cleanup()
-
-
-
 
 
 # main
@@ -638,54 +654,84 @@ if __name__ == "__main__":
 
     if do_ridge:
         test_class_ridge = Test_fhe(Fhe_ridge, "ridge")
-        print("Ridge")
-        print("SPAHM global")
-        _, Ntrain,spahm_error =  test_class_ridge.spahm_global()
 
 
-        print("Local order")
-        _,Ntrain, local_error =  test_class_ridge.local_global()
+
+        print("RIDGE")
+
+        print("MBDF bagged")
+        _, Ntrain, error_bagged, d_bagged =  test_class_ridge.MBDF_bagged_rep(fhe=False, clear_model="Ridge")
+        
+        print("BoB_global")
+        _, Ntrain, global_error_bob, d_bob =  test_class_ridge.BoB_global(fhe=False, clear_model="Ridge")
 
 
         print("MBDF global")
-        fhe_instance, Ntrain, global_error =  test_class_ridge.mbdf_global(fhe=False)
+        _, Ntrain, global_error_ridge, d_global =  test_class_ridge.mbdf_global(fhe=False, clear_model="Ridge")
+
+        print("Local order")
+        _,Ntrain, local_error_ridge, _ =  test_class_ridge.local_global(clear_model="Ridge")
+
+        
+        print("SPAHM global")
+        _, Ntrain,spahm_error_ridge, d_spahm =  test_class_ridge.spahm_global(clear_model="Ridge")
+
+        print("LASSO")
+        fhe_instance, Ntrain, global_error_bob_lasso, _ =  test_class_ridge.BoB_global(fhe=False, clear_model="Lasso")
+
+
+        print("MBDF global")
+        fhe_instance, Ntrain, global_error_lasso, _ =  test_class_ridge.mbdf_global(fhe=False, clear_model="Lasso")
+
+        print("Local order")
+        _,Ntrain, local_error_lasso, _ =  test_class_ridge.local_global(clear_model="Lasso")
+
+        print("SPAHM global")
+        _, Ntrain,spahm_error_lasso, _ =  test_class_ridge.spahm_global(clear_model="Lasso")
+
+
+
+
 
         #plot the learning curves
         fig, ax = plt.subplots(figsize=(6, 8))
-        ax.plot(Ntrain, spahm_error, label="SPAHM")
-        ax.plot(Ntrain, local_error, label="Local MBDF")
-        ax.plot(Ntrain, global_error, label="Global MBDF")
+        #first plot the results with straight lines
+        ax.plot(Ntrain, error_bagged, label="MBDF bagged", color="orange", linestyle="-", linewidth=3)
+        ax.plot(Ntrain, global_error_bob, label="BoB global", color="black", linestyle="-", linewidth=3)
+        ax.plot(Ntrain, global_error_ridge, label="MBDF global", color="blue", linestyle="-", linewidth=3)
+        ax.plot(Ntrain, local_error_ridge, label="Local order", color="red", linestyle="-", linewidth=3)
+        ax.plot(Ntrain, spahm_error_ridge, label="SPAHM global", color="green", linestyle="-", linewidth=3)
+        #plot now the lasso results with dashed lines
+        ax.plot(Ntrain, global_error_bob_lasso, color="black", linestyle="--", linewidth=3, alpha=0.3)
+        ax.plot(Ntrain, global_error_lasso,  color="blue", linestyle="-", linewidth=3, alpha=0.3)
+        ax.plot(Ntrain, local_error_lasso, color="red", linestyle="-", linewidth=3, alpha=0.3)
+        ax.plot(Ntrain, spahm_error_lasso, color="green", linestyle="-", linewidth=3, alpha=0.3)
+
+
         ax.set_xlabel(r"$N$", fontsize=25)
+        ax.set_xticks(Ntrain)
         ax.set_ylabel(r"MAE (ha)", fontsize=25)
         ax.set_yscale("log")
         ax.set_xscale("log")
-        ax.legend(fontsize=20)
+        ax.legend(fontsize=12)
 
         fig.savefig("./tmp/learning_curves.pdf", bbox_inches="tight")
 
 
+        fig2, ax2 = plt.subplots(figsize=(6, 8))
+        #plot single points
+        ax2.scatter(d_bagged, error_bagged[-1], label="MBDF bagged", color="orange", s=100)
+        ax2.scatter(d_bob, global_error_bob[-1], label="BoB global", color="black", s=100)
+        ax2.scatter(d_global, global_error_ridge[-1], label="MBDF global", color="blue", s=100)
+        ax2.scatter(d_spahm, spahm_error_ridge[-1], label="SPAHM global", color="green", s=100)
+
+        ax2.set_xlabel(r"$d$", fontsize=25)
+        ax2.set_ylabel(r"MAE (ha)", fontsize=25)
+        ax2.legend(fontsize=12)
+        fig2.savefig("./tmp/pareto.pdf", bbox_inches="tight")
+
         exit()
 
-        #dump_to_file(fhe_instance, "./tmp/fhe_instance")
-        #dump_to_file(test_class_ridge, "./tmp/test_class_ridge")
-
-
-        #pdb.set_trace()
-        """
-        test_class_ridge.save_results()
-        print("Local order")
-        test_class_ridge.local_order()
-
-        print("Local order")
-        test_class_ridge.local_order()
-        
-        print("Local hydro averaging")
-        test_class_ridge.local_hydro_averaging()
-
-        print("SPAHM global")
-        test_class_ridge.spahm_global()
-        test_class_ridge.save_results()
-        """
 
     if do_boost:
         print("Boost")
@@ -698,8 +744,6 @@ if __name__ == "__main__":
         test_class_boost.spahm_global()
         test_class_boost.save_results()
 
-
-    
 
 
     #fhe_boost.quantize_model(N_max=100)

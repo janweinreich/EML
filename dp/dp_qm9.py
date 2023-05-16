@@ -10,11 +10,10 @@ import torch
 import torch.nn as nn
 from opacus import PrivacyEngine
 import torch.optim as optim
-from sklearn.model_selection import train_test_split
-#import mean absolute error
 from sklearn.metrics import mean_absolute_error
 import random
 import matplotlib.pyplot as plt
+from torch.utils.data import random_split
 
 random_seed = 42
 np.random.seed(random_seed)
@@ -63,19 +62,15 @@ class QM9Dataset(Dataset):
         else:
             self.generate_representations()
             np.save("./tmp/X.npy", self.X)
-        # train test split
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.energies, test_size=0.2, random_state=42)
-        print("Train size: ", len(self.X_train))
-        print("Test size: ", len(self.X_test))
 
-
+        
     def __len__(self):
-        return len(self.X_train)
+        return len(self.X)
 
     def __getitem__(self, idx):
         sample = {
-            'X': torch.tensor(self.X_train[idx], dtype=torch.float32),
-            'energies': torch.tensor(self.y_train[idx], dtype=torch.float32)
+            'X': torch.tensor(self.X[idx], dtype=torch.float32),
+            'energies': torch.tensor(self.energies[idx], dtype=torch.float32)
         }
         return sample
 
@@ -102,6 +97,10 @@ class QM9Dataset(Dataset):
         return X
 
 
+
+
+
+
 class SimpleNN(nn.Module):
     def __init__(self, input_size, hidden_size1, hidden_size2):
         super(SimpleNN, self).__init__()
@@ -114,27 +113,44 @@ class SimpleNN(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-    
+
+def mse_loss_numpy(y_true, y_pred):
+    mse_loss_numpy = np.mean((y_true - y_pred) ** 2)
+    return mse_loss_numpy
+
+
 def eval_test(model, X_test, y_test):
     y_pred = model(torch.tensor(X_test, dtype=torch.float32))
     y_pred = y_pred.detach().numpy()
     mae = mean_absolute_error(y_test, y_pred)
-    return mae
+    mse_loss = mse_loss_numpy(y_test, y_pred)
+    return mae, mse_loss
 
 
 if __name__ == "__main__":
     DP = True 
     path_to_file = "qm9_data.npz"
     dataset = QM9Dataset(path_to_file)
-    # Create the DataLoader
+
+
+    # Split the dataset into a training set and a validation set
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
     batch_size = 100
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
+    # Early stopping parameters
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    max_epochs_without_improvement = 10
 
-
+    # Model parameters
     input_size = dataset.X.shape[1]  # 35
     hidden_size1 = 64
-    hidden_size2 = 32
+    hidden_size2 = 64
     model = SimpleNN(input_size, hidden_size1, hidden_size2)
 
     criterion = nn.MSELoss()
@@ -148,21 +164,22 @@ if __name__ == "__main__":
         model, optimizer, data_loader = privacy_engine.make_private(
             module=model,
             optimizer=optimizer,
-            data_loader=data_loader,
-            noise_multiplier=1.1,
+            data_loader=train_loader,
+            noise_multiplier=1.4,
             max_grad_norm=1.0,
         )
 
         
 
     # Training loop 
-    num_epochs = 120
+    num_epochs = 10000
     for epoch in range(num_epochs):
-        
+        # Training loop
+        model.train()
         running_loss = 0.0
-        for i, data in enumerate(data_loader, 0):
+        for i, data in enumerate(train_loader, 0):
             inputs = data['X']
-            energies = data['energies'].unsqueeze(1)  # Add an extra dimension to match the model's output
+            energies = data['energies'].unsqueeze(1)
 
             optimizer.zero_grad()
 
@@ -173,27 +190,59 @@ if __name__ == "__main__":
 
             running_loss += loss.item()
 
-        # Print average loss per epoch
-        print(f"Epoch {epoch + 1}, Loss: {running_loss / (i + 1)}")
-        print("Epoch: ", epoch , "test loss: ", eval_test(model, dataset.X_test, dataset.y_test))
-        #pdb.set_trace()
+        print(f"Epoch {epoch + 1}, Training Loss: {running_loss / (i + 1)}")
         
+        # Validation loop
+        model.eval()
+        running_val_loss = 0.0
+        with torch.no_grad():
+            for i, data in enumerate(val_loader, 0):
+                inputs = data['X']
+                energies = data['energies'].unsqueeze(1)
+
+                outputs = model(inputs)
+                loss    = criterion(outputs, energies)
+
+                running_val_loss += loss.item()
         
+        val_loss = running_val_loss / (i + 1)
+        print(f"Epoch {epoch + 1}, Validation Loss: {val_loss}")
+
+        # Early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
+            if DP:
+                torch.save(model.state_dict(), "./tmp/best_model_dp.pt")
+            else:
+                torch.save(model.state_dict(), "./tmp/best_model.pt")
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= max_epochs_without_improvement:
+                print(f"Early stopping at epoch {epoch + 1}")
+                break
+
+    X_train, X_val =  train_dataset.dataset.X[train_dataset.indices], val_dataset.dataset.X[val_dataset.indices]
+    y_train, y_val =  train_dataset.dataset.energies[train_dataset.indices], val_dataset.dataset.energies[val_dataset.indices]
+
+    #save 
+    np.savez_compressed("./tmp/dataset.npz", X_train=X_train, X_val=X_val, y_train=y_train, y_val=y_val)
+
+
 
     model.predict = lambda x: model(torch.tensor(x, dtype=torch.float32)).detach().numpy()
+
     #predict all test data
-    y_pred = model.predict(dataset.X_test)
-    #pdb.set_trace()
+    y_pred = model.predict(X_val)
     #eval_test
-    print("MAE: ", eval_test(model, dataset.X_test, dataset.y_test))
+    print("MAE: ", eval_test(model, X_val, y_val))
 
     #plot the results
     fig, ax = plt.subplots()
-    ax.plot(dataset.y_test, y_pred, alpha=0.5, marker='o', linestyle='')
+    ax.plot(y_val, y_pred, alpha=0.5, marker='o', linestyle='')
+    pdb.set_trace()
     #add diagonal line
     ax.plot(ax.get_xlim(), ax.get_ylim(), ls="--", c=".3")
     ax.set_xlabel("True energies")
     ax.set_ylabel("Predicted energies")
     plt.show()
-
-    #effect of normalization?

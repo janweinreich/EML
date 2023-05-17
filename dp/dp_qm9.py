@@ -39,8 +39,8 @@ def mol_to_xyz(els, coords, filename="curr.xyz"):
 
 class QM9Dataset(Dataset):
     def __init__(self, path_to_file):
-        N = 10000 #133885
-        self.load_X = True
+        N = 133885
+        self.load_X = False
         self.qm9 = np.load(path_to_file, allow_pickle=True)
         self.coords = self.qm9['coordinates']
         self.nuclear_charges = self.qm9['charges']
@@ -57,7 +57,7 @@ class QM9Dataset(Dataset):
         self.energies = self.energies[idx[:N]]
         self.Cvs = self.Cvs[idx[:N]]
 
-        if self.load_X == True:
+        if self.load_X:
             self.X = np.load("./tmp/X.npy")
         else:
             self.generate_representations()
@@ -99,6 +99,17 @@ class QM9Dataset(Dataset):
 
 
 
+def mse_loss_numpy(y_true, y_pred):
+    mse_loss_numpy = np.mean((y_true - y_pred) ** 2)
+    return mse_loss_numpy
+
+
+def eval_test(model, X_test, y_test):
+    y_pred = model(torch.tensor(X_test, dtype=torch.float32))
+    y_pred = y_pred.detach().numpy()
+    mae = mean_absolute_error(y_test, y_pred)
+    mse_loss = mse_loss_numpy(y_test, y_pred)
+    return mae, mse_loss
 
 
 class SimpleNN(nn.Module):
@@ -114,27 +125,16 @@ class SimpleNN(nn.Module):
         x = self.fc3(x)
         return x
 
-def mse_loss_numpy(y_true, y_pred):
-    mse_loss_numpy = np.mean((y_true - y_pred) ** 2)
-    return mse_loss_numpy
-
-
-def eval_test(model, X_test, y_test):
-    y_pred = model(torch.tensor(X_test, dtype=torch.float32))
-    y_pred = y_pred.detach().numpy()
-    mae = mean_absolute_error(y_test, y_pred)
-    mse_loss = mse_loss_numpy(y_test, y_pred)
-    return mae, mse_loss
 
 
 if __name__ == "__main__":
-    DP = True 
+    DP = False 
     path_to_file = "qm9_data.npz"
     dataset = QM9Dataset(path_to_file)
 
 
     # Split the dataset into a training set and a validation set
-    train_size = int(0.8 * len(dataset))
+    train_size = int(0.5 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
@@ -236,6 +236,7 @@ if __name__ == "__main__":
     y_pred = model.predict(X_val)
     #eval_test
     print("MAE: ", eval_test(model, X_val, y_val))
+    exit()
 
     #plot the results
     fig, ax = plt.subplots()

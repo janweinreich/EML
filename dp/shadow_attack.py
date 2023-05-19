@@ -19,9 +19,9 @@ import random
 from dp_qm9 import FlexibleNN
 from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
 from sklearn.metrics import classification_report
-
+import pandas as pd
 
 
 
@@ -121,7 +121,7 @@ class Shadow_models:
         X_train, X_test, y_train, y_test = train_test_split(self.X_fodder, self.y_fodder, test_size=0.2, random_state=42)
 
         # Initialize the classifier
-        classifier = LogisticRegression()
+        classifier  = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
 
         # Train the classifier
         classifier.fit(X_train, y_train)
@@ -130,14 +130,21 @@ class Shadow_models:
         y_pred = classifier.predict(X_test)
 
         # Display the classification report
-        print(classification_report(y_test, y_pred))
+        report = classification_report(y_test, y_pred, output_dict=True)
+
+        # Convert to DataFrame
+        df = pd.DataFrame(report).transpose()
+
+        # Save to CSV
+        df.to_csv('./tmp/classification_report.csv')
+        print(df)
 
 
 
     def train_single_model(self, train_dataset, train_loader, val_dataset, val_loader, k):
         # Define training constants
-        max_epochs_without_improvement = 100
-        num_epochs = 1000 # 10000
+        max_epochs_without_improvement = 0
+        num_epochs = 10000
         learning_rate = 0.01
         input_size = train_dataset.X.shape[1]
         hidden_size = 120
@@ -211,8 +218,6 @@ if __name__ == "__main__":
     X_shadow    = np.concatenate((X_train, X_val))
     y_true      = np.concatenate((y_train, y_val))
     y_shadow    = Target_model(dp_model=False).predict(X_shadow)
-
-
-    shadow_class = Shadow_models(X_shadow, y_shadow, k=2)
+    shadow_class = Shadow_models(X_shadow, y_shadow, k=3)
     shadow_class.evaluate_shadows()
     shadow_class.train_attack_model()

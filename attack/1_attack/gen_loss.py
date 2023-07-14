@@ -356,8 +356,8 @@ for ind in sel_indices:
                             running_valid_loss+=val_loss.item()
                     
                     #epoch loss
-                    train_epoch_loss=np.mean(running_train_loss)
-                    val_epoch_loss=np.mean(running_valid_loss)  
+                    train_epoch_loss= np.mean(running_train_loss)
+                    val_epoch_loss  = np.mean(running_valid_loss)  
                 
                     #epoch accuracy     
                     train_epoch_acc = accuracy_score(y_train_true,y_train_pred)
@@ -406,7 +406,7 @@ for ind in sel_indices:
             for i in range(len(all_tasks)):
                 y_row_pred = loaded_model(x_row_torch)[0] #[0].detach().numpy()
 
-                error = criterion(y_row_pred, y_row_torch)
+                error = float(criterion(y_row_pred, y_row_torch).detach())
                 inout_res.append(error)
 
         curr_sample.append(inout_res)

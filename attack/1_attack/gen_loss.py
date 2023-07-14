@@ -18,7 +18,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import rdkit as rd
 from rdkit import DataStructs
 from rdkit.Chem import AllChem
-
+import pickle
 # modeling
 import sklearn as sk
 
@@ -33,6 +33,11 @@ import datetime, os
 import pdb
 from glob import glob
 import shutil
+import time
+from tqdm import tqdm
+
+start_time = time.time()
+
 
 def save_ckp(state, is_best, checkpoint_path, best_model_path):
     """
@@ -167,7 +172,7 @@ path = "/home/jan/projects/EML/attack/1_attack/dump"
 results = {}
 
 for ind in sel_indices:
-    
+    print(f"Processing {ind}")
     mol_row = torch.load(f"./splits/{ind}.pth")
     mol_row = get_rdkit(mol_row)
     mol_row[0] = mol_row[0].fillna(-1)
@@ -177,7 +182,7 @@ for ind in sel_indices:
 
     curr_sample = []
 
-    for n_s in range(N_splits):
+    for n_s in tqdm(range(N_splits)):
         inout_res = []
         for inout in range(2):
             #remove previous models
@@ -411,5 +416,23 @@ for ind in sel_indices:
 
         curr_sample.append(inout_res)
 
+    curr_sample = np.array(curr_sample)
     results[ind] = {"info": [mol_row,x_row,y_row ], "sampling": curr_sample }
-    pdb.set_trace()
+
+
+
+print(results)
+
+# Save results
+with open('results.pkl', 'wb') as f:
+    pickle.dump(results, f)
+
+
+elapsed_time = time.time() - start_time
+print(f"Time {elapsed_time} seconds")
+
+"""
+Timing
+2849.7788619995117/10
+284.9778861999512 per molecule (both in and out training set)
+"""

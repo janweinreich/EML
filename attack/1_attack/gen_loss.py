@@ -13,7 +13,7 @@
 import numpy as np
 import pandas as pd
 import os
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 # Required RDKit modules
 import rdkit as rd
 from rdkit import DataStructs
@@ -21,18 +21,17 @@ from rdkit.Chem import AllChem
 
 # modeling
 import sklearn as sk
-from sklearn.model_selection import train_test_split
 
 # Graphing
 import matplotlib.pyplot as plt
 import seaborn as sns
 import random
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score
 import torch
 from torch.utils.data import Dataset, DataLoader
 import datetime, os
 import pdb
-from torch.utils.tensorboard import SummaryWriter
+from glob import glob
 import shutil
 
 def save_ckp(state, is_best, checkpoint_path, best_model_path):
@@ -129,7 +128,6 @@ class DNNData(Dataset):
         return self.x[idx], self.y[idx]
 
 
-
 def get_rdkit(data):
     
     for i in range(len(data)):
@@ -161,21 +159,33 @@ data = [tox21_data]
 all_tasks = [tox21_tasks[0]]
 
 #list all files in the directory ./splits
-
 split_info = np.load('./splits/sel_indices.npy', allow_pickle=True)
 sel_indices,N_splits = split_info[0], split_info[1]
+path = "/home/jan/projects/EML/attack/1_attack/dump"
 
+
+results = {}
 
 for ind in sel_indices:
+    
     mol_row = torch.load(f"./splits/{ind}.pth")
     mol_row = get_rdkit(mol_row)
     mol_row[0] = mol_row[0].fillna(-1)
     x_row,y_row = Rdkit2Numpy(mol_row[0]), mol_row[0][all_tasks].values
-    x_row_torch = x_row.astype(np.float32)
-    y_row_torch = y_row.astype(np.float32)
-    pdb.set_trace()
+    x_row_torch = torch.from_numpy(x_row.astype(np.float32))
+    y_row_torch = torch.from_numpy(y_row.astype(np.float32))
+
+    curr_sample = []
+
     for n_s in range(N_splits):
+        inout_res = []
         for inout in range(2):
+            #remove previous models
+            listold = glob(f"{path}/*.pt")
+            if len(listold) > 0:
+                for item in listold:
+                    os.remove(item)
+
             seed_value = random.randint(0, 100000)
             torch.manual_seed(seed_value)
             torch.cuda.manual_seed(seed_value)
@@ -190,9 +200,8 @@ for ind in sel_indices:
 
             data = [train_data, test_data, valid_data]
             
-
             # construct morgan fingerprints 
-            data = get_rdkit(data)
+            data    = get_rdkit(data)
             data[0] = data[0].fillna(-1)
             data[1] = data[1].fillna(-1)
             data[2] = data[2].fillna(-1)
@@ -233,7 +242,7 @@ for ind in sel_indices:
             valid_generator = DataLoader(valid_set, batch_size=len(valid_set), shuffle=False)
 
             model = DNN(input_shape, all_tasks).to(device)
-            path = "/home/jan/projects/EML/attack/1_attack/dump"
+            
 
             ###### Pathways to save models 
             checkpoint_path = path + '/current_checkpoint.pt'
@@ -255,12 +264,6 @@ for ind in sel_indices:
             # Optimizers require the parameters to optimize and a learning rate
             optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
 
-
-            # Define the desired pathway
-            writer = SummaryWriter('./dump/')
-
-
-            ##################### With Tensorboard ######################
             loss_history=[]  
             correct_history=[]  
             val_loss_history=[]  
@@ -311,14 +314,12 @@ for ind in sel_indices:
                         y_train_pred.extend(pred_train.reshape(-1).tolist())
 
                     # Zero gradients, perform a backward pass, and update the weights.
-                    writer.add_scalar("Accuracy/train", loss, batch)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
                 
                     # sum up the losses from each batch
                     running_train_loss += loss.item()
-                    writer.add_scalar("Loss/train", running_train_loss, e)
                     
                 else:
                     with torch.no_grad():    
@@ -353,7 +354,6 @@ for ind in sel_indices:
                             
 
                             running_valid_loss+=val_loss.item()
-                            writer.add_scalar("Loss/valid", running_valid_loss, e)
                     
                     #epoch loss
                     train_epoch_loss=np.mean(running_train_loss)
@@ -369,8 +369,7 @@ for ind in sel_indices:
                     val_loss_history.append(val_epoch_loss)  
                     val_correct_history.append(val_epoch_acc)  
                     
-                    print("Epoch:", e, "Training Loss:", train_epoch_loss, "Valid Loss:", val_epoch_loss)
-                    print("Training Acc:", train_epoch_acc, "Valid Acc:", val_epoch_acc)
+
                     
                     # create checkpoint variable and add important data
                     checkpoint = {
@@ -386,154 +385,31 @@ for ind in sel_indices:
                     
                     ## TODO: save the model if validation loss has decreased
                     if train_epoch_loss <= train_loss_min:
-                        print('Training loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(train_loss_min,train_epoch_loss))
                         # save checkpoint as best model
                         save_ckp(checkpoint, True, checkpoint_path, bestmodel_path)
                         train_loss_min = train_epoch_loss
                         
                     if train_epoch_loss >= val_epoch_loss:
-                        print('Training loss greater than validation loss ({:.6f} --> {:.6f}).  Saving model ...'.format(train_epoch_loss,val_epoch_loss))
                         # save checkpoint as best model
                         save_ckp(checkpoint, True, checkpoint_path, bestmodel_byvalid_crossed)
                         train_loss_min = train_epoch_loss
                         
                     if val_epoch_loss <= val_loss_min:
-                        print('Validation loss decreased ({:.6f} --> {:.6f}). Saving model ...'.format(val_loss_min,val_epoch_loss))
                         # save checkpoint as best model
                         save_ckp(checkpoint, True, checkpoint_path, bestmodel_byvalid)
                         val_loss_min = val_epoch_loss
 
-
-
             # Loads model at lowest validation loss 
-            loaded_model, optimizer, start_epoch, train_loss_min = load_ckp(bestmodel_byvalid, model, optimizer)
+            loaded_model, _, _, _ = load_ckp(bestmodel_byvalid, model, optimizer)
 
 
-            # ##### Evaluate on test set
-            # print test loss
-            for x_test_torch, y_test_torch in testing_generator:
-                y_test_pred = model.eval().to(device).cpu()(x_test_torch)
-                
-                # Compute loss over all tasks
-                loss = 0
-                for i in range(len(all_tasks)):
-                    y_test_task = y_test_torch[:,i]
-                    y_pred_task  = y_test_pred[i][:,0]
-
-                    # compute loss for labels that are not NA
-                    indice_valid = y_test_task >= 0
-                    loss_task = criterion(y_pred_task[indice_valid], y_test_task[indice_valid]) / N_test[i]
-
-                    loss += loss_task
-                
-            print(loss.item())
-
-
-            results = {}
-            # Collects performance metrics for all tasks on test set
             for i in range(len(all_tasks)):
-                valid_datapoints = y_test[:,i] >= 0
-                y_test_task = y_test[valid_datapoints,i] 
-                y_test_pred_task = y_test_pred[i].detach().numpy()[valid_datapoints,0]
-                
-                acc = accuracy_score(y_test_task, np.round(y_test_pred_task))
-                print('Accuracy for MTDNN on Morgan Fingerprint:', acc)
-                
-                bacc = sk.metrics.balanced_accuracy_score(y_test_task, np.round(y_test_pred_task))
+                y_row_pred = loaded_model(x_row_torch)[0] #[0].detach().numpy()
 
-                f1 = f1_score(y_test_task, np.round(y_test_pred_task), pos_label=1)
-                print('F1 for MTDNN on Morgan Fingerprint:', f1)
+                error = criterion(y_row_pred, y_row_torch)
+                inout_res.append(error)
 
-                cfm = sk.metrics.confusion_matrix(y_test_task, np.round(y_test_pred_task))
-                cfm = cfm.astype('float') / cfm.sum(axis=1)[:, np.newaxis]
+        curr_sample.append(inout_res)
 
-                tn, fp, fn, tp = cfm.ravel()
-                pr = tp / (tp + fp)
-                rc = tp / (tp + fn)
-                print(' True Positive:', tp)
-                print(' True Negative:', tn)
-                print('False Positive:', fp)
-                print('False Negative:', fn)
-                
-                
-                auc = roc_auc_score(y_test_task, y_test_pred_task)
-                print('Test ROC AUC ({}):'.format(all_tasks[i]), auc)
-                
-
-            print('Task'.ljust(10), '\t', '  AUC ', ' ACC ', ' BACC ', ' TN  ', ' TP  ', ' PR  ', ' RC  ', ' F1  ')
-            for task, auc in results.items():
-                print(task.ljust(10), '\t', np.round(auc,3))
-
-
-            # ##### See Valid set performance
-            # print test loss
-            for x_valid_torch, y_valid_torch in valid_generator:
-                y_valid_pred = model.eval().to(device).cpu()(x_valid_torch)
-                
-                # Compute loss over all tasks
-                loss = 0
-                for i in range(len(all_tasks)):
-                    y_test_task = y_valid_torch[:,i]
-                    y_pred_task  = y_valid_pred[i][:,0]
-
-                    # compute loss for labels that are not NA
-                    indice_valid = y_test_task >= 0
-                    loss_task = criterion(y_pred_task[indice_valid], y_test_task[indice_valid]) / N_test[i]
-
-                    loss += loss_task
-                
-            print(loss.item())
-
-
-
-            results_valid = {}
-            # Collects performance metrics for all tasks on Valid set
-            for i in range(len(all_tasks)):
-                
-                valid_datapoints = y_valid[:,i] >= 0
-                y_valid_task = y_valid[valid_datapoints,i] 
-                y_valid_pred_task = y_valid_pred[i].detach().numpy()[valid_datapoints,0]
-                
-                
-                acc = accuracy_score(y_valid_task, np.round(y_valid_pred_task))
-                print('Accuracy for deepnn on Morgan Fingerprint:', acc)
-                
-                bacc = sk.metrics.balanced_accuracy_score(y_valid_task, np.round(y_valid_pred_task))
-
-                f1 = f1_score(y_valid_task, np.round(y_valid_pred_task), pos_label=1)
-                print('F1 for deepnn on Morgan Fingerprint:', f1)
-
-                cfm = sk.metrics.confusion_matrix(y_valid_task, np.round(y_valid_pred_task))
-                cfm = cfm.astype('float') / cfm.sum(axis=1)[:, np.newaxis]
-
-                print('Confusion Matrix for deepnn on Morgan Fingerprint:\n', cfm)
-
-                tn, fp, fn, tp = cfm.ravel()
-                pr = tp / (tp + fp)
-                rc = tp / (tp + fn)
-                print(' True Positive:', tp)
-                print(' True Negative:', tn)
-                print('False Positive:', fp)
-                print('False Negative:', fn)
-                
-                
-                auc = roc_auc_score(y_valid_task, y_valid_pred_task)
-                print('Test ROC AUC ({}):'.format(all_tasks[i]), auc)
-                
-                results_valid[all_tasks[i]] = [auc, acc, bacc, tn, tp, pr, rc, f1]
-
-                fpr, tpr, threshold = sk.metrics.roc_curve(y_valid_task, y_valid_pred_task)
-                plt.plot(fpr, tpr, 'b', label = 'AUC')
-                plt.legend(loc = 'lower right')
-                plt.plot([0, 1], [0, 1],'r--')
-                plt.xlim([0, 1])
-                plt.ylim([0, 1])
-                plt.ylabel('True Positive Rate')
-                plt.xlabel('False Positive Rate')
-                plt.show()
-
-
-
-            print('Task'.ljust(35), '\t', '  AUC ', ' ACC ', ' BACC ', ' TN  ', ' TP  ', ' PR  ', ' RC  ', ' F1  ')
-            for task, auc in results_valid.items():
-                print(task.ljust(35), '\t', np.round(auc,3))
+    results[ind] = {"info": [mol_row,x_row,y_row ], "sampling": curr_sample }
+    pdb.set_trace()

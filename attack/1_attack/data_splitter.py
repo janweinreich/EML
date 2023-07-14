@@ -113,8 +113,8 @@ data_len = len(data[0])
 # pick 100 random indices within len(data[0])  = 8014, once leave in/once remove the point from the training data (but put it to the test set)
 # for each generate 500 splits (1000 different seeds) with and without the point in the training data/ meaning 1000 total splits
 
-sel_indices = random.sample(range(data_len), 10)
-N_splits    = 10
+sel_indices = random.sample(range(data_len), 5)
+N_splits    = 5
 np.save("./splits/sel_indices.npy", np.array([sel_indices, N_splits ]) )
 
 for ind in sel_indices:

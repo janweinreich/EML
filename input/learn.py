@@ -14,8 +14,12 @@ new_data, new_hyper = True, False
 
 if __name__ == "__main__":
 
+    #get durrent working directory
+    import os
+    cwd = os.getcwd()
     
-    path_to_file = "./input/data/qm9_data.npz"
+    path_to_file =f"{cwd}/data/qm9_data.npz" # change this path "./input/data/qm9_data.npz"
+    
     qm9 = np.load(path_to_file, allow_pickle=True)
     data = qm9
     Nmax = 30000
@@ -39,7 +43,7 @@ if __name__ == "__main__":
             
         X, Q = np.array(X), nuclear_charges
         print(X.shape)
-        exit()
+        # comment the exit! exit()
         y = energies
 
 
@@ -70,10 +74,15 @@ if __name__ == "__main__":
             lrn_crv.append(MAE)
 
         lrn_crvs.append(lrn_crv)
-        exit()
 
     if new_data:
-        
+        # check if the subfolder exists
+        if not os.path.exists("./data/train"):
+            os.makedirs(f"{cwd}/data/train")
+        if not os.path.exists("./data/test"):
+            os.makedirs(f"{cwd}/data/test")
+
+
         np.savez_compressed("REP", X=X, X_train=X_train, y_train=y_train,
                             X_test=X_test, y_test=y_test, ids_train=ids_train, ids_test=ids_test)
 

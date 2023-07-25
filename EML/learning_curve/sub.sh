@@ -1,7 +1,8 @@
 #!/bin/bash
 reptype="CM"
 mkdir -p ./jobscripts/
-
+mkdir input
+cp -r /home/jan/projects/EML/input/data ./input/data_${reptype}
 for ntrain in 32 # 64 128 256 512 1024 2048 4096 8192 16384
 do
         for ntest in 0 1 # {0..19..1}
